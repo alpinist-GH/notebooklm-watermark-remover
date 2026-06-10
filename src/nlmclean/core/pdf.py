@@ -67,7 +67,9 @@ def _page_size(page: pikepdf.Page) -> tuple[float, float]:
     return box[2] - box[0], box[3] - box[1]
 
 
-def _detect_geometry(pdf_bytes: bytes, page: pikepdf.Page, explicit: Region | None) -> _PageGeometry:
+def _detect_geometry(
+    pdf_bytes: bytes, page: pikepdf.Page, explicit: Region | None
+) -> _PageGeometry:
     pw, ph = _page_size(page)
     if explicit is not None:
         return _PageGeometry(pw, ph, explicit)
