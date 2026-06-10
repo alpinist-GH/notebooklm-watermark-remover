@@ -24,6 +24,7 @@ from nlmclean.core.job import CancelToken, Job
 from nlmclean.ffmpeg.locate import ffmpeg_version
 from nlmclean.gui.file_table import (
     CANCELLED,
+    COL_OUTPUT,
     COL_PROGRESS,
     DETECTING,
     DONE,
@@ -57,10 +58,11 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("nlmclean - NotebookLM Watermark Remover")
-        self.resize(940, 600)
+        self.resize(1100, 600)
         self.setAcceptDrops(True)
 
-        self.settings = QSettings("nlmclean", "nlmclean")
+        # org/app names come from QApplication (set in app.py; tests redirect to a temp ini)
+        self.settings = QSettings()
         self.model = FileTableModel()
         self.signals = WorkerSignals()
         self.signals.detected.connect(self._on_detected)
@@ -116,12 +118,15 @@ class MainWindow(QMainWindow):
         self.table.setModel(self.model)
         self.table.setItemDelegateForColumn(COL_PROGRESS, ProgressDelegate(self.table))
         self.table.setSelectionBehavior(QTableView.SelectRows)
-        self.table.horizontalHeader().setStretchLastSection(True)
-        self.table.setColumnWidth(0, 280)
-        self.table.setColumnWidth(2, 200)
+        self.table.horizontalHeader().setStretchLastSection(True)  # Output column stretches
+        self.table.setColumnWidth(0, 230)
+        self.table.setColumnWidth(1, 60)
+        self.table.setColumnWidth(2, 170)
+        self.table.setColumnWidth(3, 90)
+        self.table.setColumnWidth(4, 110)
         self.table.setContextMenuPolicy(Qt.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self._context_menu)
-        self.table.doubleClicked.connect(lambda index: self._adjust_region(index.row()))
+        self.table.doubleClicked.connect(self._double_clicked)
 
         self.stack.addWidget(self.drop_zone)
         self.stack.addWidget(self.table)
@@ -171,6 +176,7 @@ class MainWindow(QMainWindow):
             if kind is None or not path.is_file() or self.model.has_path(path):
                 continue
             item = FileItem(path=path, kind=kind, status=DETECTING)
+            item.planned_dst = default_output(path, self.output_dir)
             self.model.add(item)
             self.pool.start(DetectWorker(item.item_id, path, self.signals))
         if self.model.items:
@@ -249,6 +255,11 @@ class MainWindow(QMainWindow):
                 self.output_dir = None
         else:
             self.output_dir = None
+        # reflect the new destination in the Output column for everything not yet written
+        for item in self.model.items:
+            if item.status != DONE:
+                item.planned_dst = default_output(item.path, self.output_dir)
+        self.model.refresh_all()
 
     def _start_all(self) -> None:
         mode = self.mode_combo.currentData()
@@ -259,9 +270,10 @@ class MainWindow(QMainWindow):
             item.status = PROCESSING
             item.progress = 0.0
             item.message = ""
+            item.planned_dst = default_output(item.path, self.output_dir)
             job = Job(
                 src=item.path,
-                dst=default_output(item.path, self.output_dir),
+                dst=item.planned_dst,
                 mode=mode,
                 region=item.job_region(),
                 cancel=item.cancel,
@@ -297,6 +309,14 @@ class MainWindow(QMainWindow):
                 self.stack.setCurrentWidget(self.drop_zone)
         elif chosen == open_out and item.dst:
             self._reveal(item.dst)
+
+    def _double_clicked(self, index) -> None:
+        item = self.model.items[index.row()]
+        if index.column() == COL_OUTPUT:
+            if item.dst is not None and item.dst.exists():
+                self._reveal(item.dst)
+            return
+        self._adjust_region(index.row())
 
     def _adjust_region(self, row: int) -> None:
         item = self.model.items[row]

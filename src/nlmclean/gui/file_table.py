@@ -40,7 +40,8 @@ class FileItem:
     region_scale: float = 1.0
     region_is_manual: bool = False
     preview: np.ndarray | None = None
-    dst: Path | None = None
+    planned_dst: Path | None = None  # where the output will be written
+    dst: Path | None = None  # where it actually was written
     cancel: CancelToken = field(default_factory=CancelToken)
 
     def job_region(self) -> Region | None:
@@ -49,8 +50,8 @@ class FileItem:
         return self.region if self.region_scale == 1.0 else self.region.scaled(self.region_scale)
 
 
-COLUMNS = ("File", "Type", "Region", "Status", "Progress")
-COL_FILE, COL_TYPE, COL_REGION, COL_STATUS, COL_PROGRESS = range(5)
+COLUMNS = ("File", "Type", "Region", "Status", "Progress", "Output")
+COL_FILE, COL_TYPE, COL_REGION, COL_STATUS, COL_PROGRESS, COL_OUTPUT = range(6)
 
 
 class FileTableModel(QAbstractTableModel):
@@ -90,6 +91,9 @@ class FileTableModel(QAbstractTableModel):
                 return f"{item.region} ({tag})"
             if col == COL_STATUS:
                 return item.status
+            if col == COL_OUTPUT:
+                target = item.dst or item.planned_dst
+                return str(target) if target else "-"
             return None  # progress drawn by delegate
 
         if role == Qt.ToolTipRole:
@@ -97,6 +101,12 @@ class FileTableModel(QAbstractTableModel):
                 return str(item.path)
             if col == COL_STATUS and item.message:
                 return item.message
+            if col == COL_OUTPUT:
+                target = item.dst or item.planned_dst
+                if target is None:
+                    return None
+                hint = "double-click to open" if item.dst else "will be written here"
+                return f"{target}\n({hint})"
             return None
 
         if role == Qt.ForegroundRole and col in (COL_REGION, COL_STATUS):
@@ -131,6 +141,12 @@ class FileTableModel(QAbstractTableModel):
 
     def refresh_row(self, row: int) -> None:
         self.dataChanged.emit(self.index(row, 0), self.index(row, len(COLUMNS) - 1))
+
+    def refresh_all(self) -> None:
+        if self.items:
+            self.dataChanged.emit(
+                self.index(0, 0), self.index(len(self.items) - 1, len(COLUMNS) - 1)
+            )
 
     def has_path(self, path: Path) -> bool:
         return any(item.path == path for item in self.items)

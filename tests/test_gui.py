@@ -13,7 +13,16 @@ from nlmclean.gui.main_window import MainWindow  # noqa: E402
 
 
 @pytest.fixture()
-def window(qtbot):
+def window(qtbot, tmp_path):
+    # keep QSettings out of the real registry and isolated per test
+    from PySide6.QtCore import QCoreApplication, QSettings
+
+    QCoreApplication.setOrganizationName("nlmclean-test")
+    QCoreApplication.setApplicationName("nlmclean-test")
+    QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+    QSettings.setPath(
+        QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(tmp_path / "settings")
+    )
     win = MainWindow()
     qtbot.addWidget(win)
     return win
@@ -25,6 +34,8 @@ def test_add_and_process_image(window, qtbot, image_file, tmp_path):
     assert len(window.model.items) == 1
     item = window.model.items[0]
     assert item.kind == "image"
+    # the Output column shows the destination before processing starts
+    assert item.planned_dst == tmp_path / "slide_clean.png"
 
     qtbot.waitUntil(lambda: item.status == READY, timeout=15000)
     assert item.region is not None
@@ -32,7 +43,19 @@ def test_add_and_process_image(window, qtbot, image_file, tmp_path):
 
     window._start_all()
     qtbot.waitUntil(lambda: item.status == DONE, timeout=30000)
-    assert item.dst is not None and item.dst.exists()
+    assert item.dst == item.planned_dst and item.dst.exists()
+
+
+def test_output_column_defaults_next_to_source(window, image_file):
+    from PySide6.QtCore import Qt
+
+    from nlmclean.gui.file_table import COL_OUTPUT
+
+    window.add_files([image_file])
+    item = window.model.items[0]
+    assert item.planned_dst == image_file.parent / "slide_clean.png"
+    shown = window.model.data(window.model.index(0, COL_OUTPUT), Qt.DisplayRole)
+    assert shown == str(item.planned_dst)
 
 
 def test_unsupported_and_duplicate_files_ignored(window, image_file, tmp_path):
