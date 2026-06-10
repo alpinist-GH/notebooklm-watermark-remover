@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: nlmclean-${{ github.ref_name }}-windows-x64.zip
+          - os: macos-14
+            artifact: nlmclean-${{ github.ref_name }}-macos.dmg
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: pip install -e .[dev]
+
+      - name: Check tag matches package version
+        shell: python
+        run: |
+          import os, nlmclean
+          tag = os.environ["GITHUB_REF_NAME"].lstrip("v")
+          assert tag == nlmclean.__version__, f"tag {tag} != version {nlmclean.__version__}"
+
+      - name: Bundle static ffmpeg
+        run: python packaging/fetch_ffmpeg.py
+
+      - name: Build
+        run: pyinstaller packaging/nlmclean.spec --noconfirm
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: Compress-Archive -Path dist/nlmclean -DestinationPath ${{ matrix.artifact }}
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: bash packaging/make_dmg.sh ${{ matrix.artifact }}
+
+      - name: Upload release artifact
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.artifact }}
+          draft: true

@@ -15,6 +15,7 @@ venv/
 
 # PyInstaller
 *.manifest
+packaging/ffmpeg_bin/
 
 # OS
 .DS_Store

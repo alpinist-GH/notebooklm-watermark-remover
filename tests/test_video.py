@@ -8,6 +8,17 @@ from nlmclean.ffmpeg.runner import extract_frame
 from tests.helpers import diff_in_and_out
 
 
+def test_probe_stderr_fallback(video_file, ffmpeg_exe):
+    """Release bundles ship no ffprobe - the `ffmpeg -i` stderr parser must work."""
+    from nlmclean.ffmpeg.probe import _probe_ffmpeg_stderr
+
+    info = _probe_ffmpeg_stderr(ffmpeg_exe, video_file)
+    assert (info.width, info.height) == (1470, 956)
+    assert info.has_audio
+    assert abs(info.duration - 2.0) < 0.3
+    assert info.fps > 0
+
+
 @pytest.mark.parametrize("mode", ["fast", "quality"])
 def test_clean_video(video_file, tmp_path, mode):
     dst = tmp_path / f"overview_{mode}.mp4"
