@@ -1,8 +1,11 @@
-"""Multi-scale, edge-based template matching for the NotebookLM watermark.
+"""Multi-scale intensity template matching for the NotebookLM watermark.
 
 The bundled templates (assets/templates/wm_video.png, wm_doc.png) are grayscale
-crops of the watermark from real exports. Matching runs on Canny edge maps so
-the slide's background color or gradient doesn't affect the score.
+crops of the watermark from real exports. The mark is faint (~35 gray levels of
+contrast), which defeats edge-based matching, so we correlate intensities with
+TM_CCOEFF_NORMED: the mean subtraction makes it insensitive to background
+brightness, and accepting negative peaks handles the polarity flip on dark
+slides (where the translucent mark renders lighter than its background).
 """
 
 from __future__ import annotations
@@ -16,10 +19,11 @@ import numpy as np
 
 from nlmclean.core.region import Region
 
-ACCEPT_SCORE = 0.55
+ACCEPT_SCORE = 0.65
 PAD = 6
-# geometric scale sweep: template may be rendered larger/smaller than our crop
-_SCALES = np.geomspace(0.4, 2.5, num=12)
+# geometric scale sweep + exact 1.0: most exports match the template's native
+# 720p resolution, and a faint 12px mark loses correlation at even +/-8% scale
+_SCALES = np.unique(np.append(np.geomspace(0.4, 2.5, num=12), [1.0, 1.5, 2.0]))
 
 
 def _assets_dir() -> Path:
@@ -38,10 +42,6 @@ def _load_template(kind: str) -> np.ndarray | None:
     return tmpl
 
 
-def _edges(gray: np.ndarray) -> np.ndarray:
-    return cv2.Canny(gray, 50, 150)
-
-
 def match_template(img_bgr: np.ndarray, kind: str) -> tuple[Region, float] | None:
     tmpl = _load_template(kind)
     if tmpl is None:
@@ -52,7 +52,6 @@ def match_template(img_bgr: np.ndarray, kind: str) -> tuple[Region, float] | Non
     sx = int(img_w * 0.60)
     sy = int(img_h * 0.70)
     search = cv2.cvtColor(img_bgr[sy:, sx:], cv2.COLOR_BGR2GRAY)
-    search_edges = _edges(search)
 
     best: tuple[float, int, int, int, int] | None = None  # score, x, y, w, h
     for scale in _SCALES:
@@ -61,8 +60,10 @@ def match_template(img_bgr: np.ndarray, kind: str) -> tuple[Region, float] | Non
         if tw >= search.shape[1] or th >= search.shape[0]:
             continue
         scaled = cv2.resize(tmpl, (tw, th), interpolation=cv2.INTER_AREA)
-        result = cv2.matchTemplate(search_edges, _edges(scaled), cv2.TM_CCOEFF_NORMED)
-        _, score, _, loc = cv2.minMaxLoc(result)
+        result = cv2.matchTemplate(search, scaled, cv2.TM_CCOEFF_NORMED)
+        min_v, max_v, min_loc, max_loc = cv2.minMaxLoc(result)
+        # negative peak = same mark with inverted contrast (dark slide background)
+        score, loc = (max_v, max_loc) if max_v >= -min_v else (-min_v, min_loc)
         if best is None or score > best[0]:
             best = (float(score), loc[0], loc[1], tw, th)
 

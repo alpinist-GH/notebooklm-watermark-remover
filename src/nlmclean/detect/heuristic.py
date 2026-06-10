@@ -1,24 +1,22 @@
 """Fallback watermark placement derived from known NotebookLM export geometry.
 
 All position constants live here so a change in NotebookLM's export layout
-is a one-file fix. Reference geometry (from real exports):
-
-- Video Overviews: ~200x60 px logo at (1240, 850) on a 1470x956 frame,
-  i.e. right margin ~30 px / bottom margin ~46 px, scaling linearly with width.
-- PDF / PPTX slide exports: same corner, ~115 px from the right edge and
-  ~30 px from the bottom at slide scale.
+is a one-file fix. Reference geometry measured on a real 2026-06 Video
+Overview export (1280x720): logo + "NotebookLM" wordmark, 115x12 px of
+visible strokes with the right edge 17 px and the bottom edge 16 px from
+the frame border. Constants below include a little slack around that.
 """
 
 from __future__ import annotations
 
 from nlmclean.core.region import Region
 
-REF_WIDTH = 1470.0
+REF_WIDTH = 1280.0
 
 # (mark_w, mark_h, right_margin, bottom_margin) at REF_WIDTH
 _GEOMETRY = {
-    "video": (200, 60, 30, 46),
-    "doc": (200, 60, 30, 30),
+    "video": (118, 18, 15, 14),
+    "doc": (118, 18, 15, 14),
 }
 
 PAD = 8
