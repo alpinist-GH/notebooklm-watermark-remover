@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nlmclean"
+description = "Remove the NotebookLM watermark from exported videos, PDFs, PPTX slides, and images - fully local."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+dynamic = ["version"]
+dependencies = [
+    "numpy>=1.26",
+    "opencv-python-headless>=4.9",
+    "Pillow>=10.0",
+    "pikepdf>=9.0",
+    "pypdfium2>=4.30",
+    "PySide6>=6.7",
+    "imageio-ffmpeg>=0.5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-qt>=4.4",
+    "ruff>=0.6",
+    "pyinstaller>=6.10",
+]
+
+[project.scripts]
+nlmclean = "nlmclean.cli:main"
+
+[project.gui-scripts]
+nlmclean-gui = "nlmclean.gui.app:main"
+
+[project.urls]
+Homepage = "https://github.com/alpinist/notebooklm-watermark-remover"
+
+[tool.setuptools.dynamic]
+version = { attr = "nlmclean.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

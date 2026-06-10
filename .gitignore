@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.coverage
+
+# PyInstaller
+*.manifest
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local test media (real NotebookLM exports - do not commit)
+samples/
