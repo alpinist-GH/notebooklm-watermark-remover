@@ -43,8 +43,9 @@ page - no Python or ffmpeg to install, everything is bundled.
 
 **macOS**
 
-- Download the dmg for your chip: `...-macos-arm64.dmg` (Apple Silicon) or
-  `...-macos-intel.dmg` (Intel). Open it and drag **nlmclean** to Applications.
+- Download `nlmclean-<version>-macos-intel.dmg`, open it, and drag **nlmclean**
+  to Applications. It's an Intel (x86_64) build but runs on Apple Silicon too
+  via Rosetta, so it works on every Mac.
 - The app is ad-hoc signed, so the first launch is blocked by Gatekeeper:
   right-click the app -> **Open** -> **Open**.
 
