@@ -2,23 +2,23 @@
 
 from __future__ import annotations
 
-import subprocess
-import sys
 from pathlib import Path
 
 from PySide6.QtCore import QSettings, Qt, QThreadPool
+from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
-    QComboBox,
     QFileDialog,
     QLabel,
     QMainWindow,
     QMenu,
-    QPushButton,
+    QMessageBox,
     QStackedWidget,
+    QStyle,
     QTableView,
     QToolBar,
 )
 
+from nlmclean import __version__
 from nlmclean.core.dispatch import SUPPORTED_EXTS, default_output, kind_of
 from nlmclean.core.job import CancelToken, Job
 from nlmclean.ffmpeg.locate import ffmpeg_version
@@ -36,6 +36,8 @@ from nlmclean.gui.file_table import (
     ProgressDelegate,
 )
 from nlmclean.gui.preview_dialog import PreviewDialog
+from nlmclean.gui.settings_dialog import SettingsDialog
+from nlmclean.gui.util import reveal_in_explorer
 from nlmclean.gui.workers import DetectWorker, ProcessWorker, WorkerSignals
 
 _FILTER = (
@@ -43,14 +45,26 @@ _FILTER = (
     "(*.mp4 *.mov *.m4v *.webm *.mkv *.pdf *.pptx *.png *.jpg *.jpeg *.webp)"
 )
 
+_DROP_TEXT = """
+<div style='color:#888;'>
+<h2 style='margin-bottom:4px;'>Drop files here</h2>
+<p style='font-size:14px;'>MP4 &middot; MOV &middot; WEBM &middot; MKV &middot;
+PDF &middot; PPTX &middot; PNG &middot; JPG &middot; WEBP</p>
+<p style='font-size:12px;'>The watermark is detected automatically &mdash;
+right-click a file to preview or adjust the region before processing.<br>
+Everything is processed locally on this computer; nothing is uploaded.</p>
+<p style='font-size:12px;'>or use <b>File &rsaquo; Add Files&hellip;</b> (Ctrl+O)</p>
+</div>
+"""
+
 
 class DropZone(QLabel):
     def __init__(self) -> None:
-        super().__init__("Drop MP4 / PDF / PPTX / PNG / JPG here\n\nor click “Add Files…”")
+        super().__init__(_DROP_TEXT)
+        self.setTextFormat(Qt.RichText)
         self.setAlignment(Qt.AlignCenter)
         self.setStyleSheet(
-            "QLabel { border: 2px dashed #888; border-radius: 12px; "
-            "font-size: 16px; color: #888; margin: 24px; }"
+            "QLabel { border: 2px dashed #888; border-radius: 12px; margin: 24px; }"
         )
 
 
@@ -71,44 +85,105 @@ class MainWindow(QMainWindow):
         self.signals.finished.connect(self._on_finished)
         self.pool = QThreadPool.globalInstance()
         self.output_dir: Path | None = None
+        self.output_win = None  # created lazily on first finished file
+        self._output_shown_once = False
 
+        self._build_actions()
+        self._build_menubar()
         self._build_toolbar()
         self._build_center()
         self._build_statusbar()
         self._restore_settings()
 
     # ------------------------------------------------------------- UI setup
+    def _icon(self, sp: QStyle.StandardPixmap):
+        return self.style().standardIcon(sp)
+
+    def _build_actions(self) -> None:
+        self.act_add = QAction(self._icon(QStyle.SP_DialogOpenButton), "Add Files…", self)
+        self.act_add.setShortcut(QKeySequence.Open)
+        self.act_add.setStatusTip("Pick video, PDF, PPTX or image files to clean")
+        self.act_add.triggered.connect(self._pick_files)
+
+        self.act_remove = QAction(self._icon(QStyle.SP_TrashIcon), "Remove Selected", self)
+        self.act_remove.setShortcut(QKeySequence.Delete)
+        self.act_remove.setShortcutContext(Qt.WindowShortcut)
+        self.act_remove.setStatusTip("Remove the selected files from the input list")
+        self.act_remove.triggered.connect(self._remove_selected)
+
+        self.act_start = QAction(self._icon(QStyle.SP_MediaPlay), "Start", self)
+        self.act_start.setStatusTip("Remove the watermark from every file in the list")
+        self.act_start.triggered.connect(self._start_all)
+
+        self.act_cancel = QAction(self._icon(QStyle.SP_MediaStop), "Cancel All", self)
+        self.act_cancel.setStatusTip("Stop all files that are currently processing")
+        self.act_cancel.triggered.connect(self._cancel_all)
+
+        self.act_output_window = QAction(
+            self._icon(QStyle.SP_FileDialogDetailedView), "Output Window", self
+        )
+        self.act_output_window.setStatusTip(
+            "Show finished files - click one to preview and play it"
+        )
+        self.act_output_window.triggered.connect(self._toggle_output_window)
+
+        self.act_settings = QAction(
+            self._icon(QStyle.SP_FileDialogContentsView), "Settings…", self
+        )
+        self.act_settings.setMenuRole(QAction.PreferencesRole)
+        self.act_settings.setStatusTip("Video mode, output folder, metadata stripping")
+        self.act_settings.triggered.connect(self._show_settings)
+
+        self.act_about = QAction(
+            self._icon(QStyle.SP_MessageBoxInformation), "About nlmclean", self
+        )
+        self.act_about.setMenuRole(QAction.AboutRole)
+        self.act_about.setStatusTip("Version and license information")
+        self.act_about.triggered.connect(self._show_about)
+
+        self.act_exit = QAction(self._icon(QStyle.SP_DialogCloseButton), "Exit", self)
+        self.act_exit.setShortcut(QKeySequence.Quit)
+        self.act_exit.setMenuRole(QAction.QuitRole)
+        self.act_exit.setStatusTip("Cancel running jobs and quit")
+        self.act_exit.triggered.connect(self.close)
+
+    def _build_menubar(self) -> None:
+        bar = self.menuBar()
+        file_menu = bar.addMenu("&File")
+        file_menu.addAction(self.act_add)
+        file_menu.addAction(self.act_remove)
+        file_menu.addSeparator()
+        file_menu.addAction(self.act_output_window)
+        file_menu.addSeparator()
+        file_menu.addAction(self.act_exit)
+
+        process_menu = bar.addMenu("&Process")
+        process_menu.addAction(self.act_start)
+        process_menu.addAction(self.act_cancel)
+
+        settings_menu = bar.addMenu("&Settings")
+        settings_menu.addAction(self.act_settings)
+
+        help_menu = bar.addMenu("&Help")
+        help_menu.addAction(self.act_about)
+        about_qt = help_menu.addAction("About Qt")
+        about_qt.triggered.connect(lambda: QMessageBox.aboutQt(self))
+
     def _build_toolbar(self) -> None:
         bar = QToolBar()
         bar.setMovable(False)
+        bar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.addToolBar(bar)
-
-        add_btn = QPushButton("Add Files…")
-        add_btn.clicked.connect(self._pick_files)
-        bar.addWidget(add_btn)
-
+        bar.addAction(self.act_add)
+        bar.addAction(self.act_remove)
         bar.addSeparator()
-        bar.addWidget(QLabel(" Video mode: "))
-        self.mode_combo = QComboBox()
-        self.mode_combo.addItem("Fast (delogo)", "fast")
-        self.mode_combo.addItem("Quality (inpaint)", "quality")
-        bar.addWidget(self.mode_combo)
-
+        bar.addAction(self.act_start)
+        bar.addAction(self.act_cancel)
         bar.addSeparator()
-        bar.addWidget(QLabel(" Output: "))
-        self.output_combo = QComboBox()
-        self.output_combo.addItem("Same folder (suffix _clean)")
-        self.output_combo.addItem("Choose folder…")
-        self.output_combo.activated.connect(self._output_changed)
-        bar.addWidget(self.output_combo)
-
+        bar.addAction(self.act_output_window)
+        bar.addAction(self.act_settings)
         bar.addSeparator()
-        self.start_btn = QPushButton("Start")
-        self.start_btn.clicked.connect(self._start_all)
-        bar.addWidget(self.start_btn)
-        self.cancel_btn = QPushButton("Cancel All")
-        self.cancel_btn.clicked.connect(self._cancel_all)
-        bar.addWidget(self.cancel_btn)
+        bar.addAction(self.act_exit)
 
     def _build_center(self) -> None:
         self.stack = QStackedWidget()
@@ -138,18 +213,14 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(text)
 
     def _restore_settings(self) -> None:
-        mode = self.settings.value("mode", "fast")
-        self.mode_combo.setCurrentIndex(1 if mode == "quality" else 0)
         out = self.settings.value("output_dir", "")
-        if out and Path(out).is_dir():
-            self.output_dir = Path(out)
-            self.output_combo.setItemText(1, f"Folder: {out}")
-            self.output_combo.setCurrentIndex(1)
+        self.output_dir = Path(out) if out and Path(out).is_dir() else None
 
     def closeEvent(self, event) -> None:
-        self.settings.setValue("mode", self.mode_combo.currentData())
         self.settings.setValue("output_dir", str(self.output_dir) if self.output_dir else "")
         self._cancel_all()
+        if self.output_win is not None:
+            self.output_win.shutdown()
         super().closeEvent(event)
 
     # ------------------------------------------------------------ add files
@@ -222,6 +293,7 @@ class MainWindow(QMainWindow):
             item.status = DONE
             item.dst = result.dst
             item.progress = 1.0
+            self._add_output(result.dst)
         elif result.message == "cancelled":
             item.status = CANCELLED
         else:
@@ -243,26 +315,64 @@ class MainWindow(QMainWindow):
                 message += f" ({failed} failed)"
             self.statusBar().showMessage(message)
 
-    # -------------------------------------------------------------- actions
-    def _output_changed(self, index: int) -> None:
-        if index == 1:
-            chosen = QFileDialog.getExistingDirectory(self, "Output folder")
-            if chosen:
-                self.output_dir = Path(chosen)
-                self.output_combo.setItemText(1, f"Folder: {chosen}")
-            else:
-                self.output_combo.setCurrentIndex(0)
-                self.output_dir = None
+    # -------------------------------------------------------- output window
+    def _output_window(self):
+        if self.output_win is None:
+            from nlmclean.gui.output_window import OutputWindow
+
+            self.output_win = OutputWindow()
+        return self.output_win
+
+    def _add_output(self, dst: Path) -> None:
+        win = self._output_window()
+        win.add_output(dst)
+        if not self._output_shown_once:
+            # only steal focus once per session, not on every batch item
+            self._output_shown_once = True
+            win.show()
+            win.raise_()
+
+    def _toggle_output_window(self) -> None:
+        win = self._output_window()
+        if win.isVisible():
+            win.hide()
         else:
-            self.output_dir = None
+            win.show()
+            win.raise_()
+
+    # -------------------------------------------------------------- actions
+    def _show_settings(self) -> None:
+        dialog = SettingsDialog(self)
+        if dialog.exec() != SettingsDialog.Accepted:
+            return
+        self.output_dir = dialog.selected_output_dir()
+        self._refresh_planned_dsts()
+
+    def _refresh_planned_dsts(self) -> None:
         # reflect the new destination in the Output column for everything not yet written
         for item in self.model.items:
             if item.status != DONE:
                 item.planned_dst = default_output(item.path, self.output_dir)
         self.model.refresh_all()
 
+    def _show_about(self) -> None:
+        ffmpeg = ffmpeg_version() or "not found"
+        QMessageBox.about(
+            self,
+            "About nlmclean",
+            f"<h3>nlmclean {__version__}</h3>"
+            "<p>Removes the NotebookLM / Gemini watermark from videos, PDFs, "
+            "slide decks and images, and can strip file metadata. All processing "
+            "happens locally on this computer.</p>"
+            "<p>Only use it on content you created or have the rights to edit.</p>"
+            f"<p style='color:#888;'>ffmpeg: {ffmpeg}<br>"
+            "License: MIT - "
+            "<a href='https://github.com/alpinist-GH/notebooklm-watermark-remover'>"
+            "GitHub</a></p>",
+        )
+
     def _start_all(self) -> None:
-        mode = self.mode_combo.currentData()
+        mode = self.settings.value("mode", "fast")
         for row, item in enumerate(self.model.items):
             if item.status not in (READY, FAILED, CANCELLED):
                 continue
@@ -287,6 +397,16 @@ class MainWindow(QMainWindow):
             if item.status == PROCESSING:
                 item.cancel.cancel()
 
+    def _remove_selected(self) -> None:
+        rows = sorted({i.row() for i in self.table.selectionModel().selectedRows()})
+        if not rows:
+            return
+        for row in rows:
+            self.model.items[row].cancel.cancel()
+        self.model.remove_rows(rows)
+        if not self.model.items:
+            self.stack.setCurrentWidget(self.drop_zone)
+
     def _context_menu(self, pos) -> None:
         index = self.table.indexAt(pos)
         if not index.isValid():
@@ -296,25 +416,20 @@ class MainWindow(QMainWindow):
         menu = QMenu(self)
         adjust = menu.addAction("Preview / adjust region…")
         adjust.setEnabled(item.preview is not None)
-        remove = menu.addAction("Remove")
+        menu.addAction(self.act_remove)
         open_out = menu.addAction("Open output")
         open_out.setEnabled(item.dst is not None and item.dst.exists())
         chosen = menu.exec(self.table.viewport().mapToGlobal(pos))
         if chosen == adjust:
             self._adjust_region(row)
-        elif chosen == remove:
-            item.cancel.cancel()
-            self.model.remove_rows([row])
-            if not self.model.items:
-                self.stack.setCurrentWidget(self.drop_zone)
         elif chosen == open_out and item.dst:
-            self._reveal(item.dst)
+            reveal_in_explorer(item.dst)
 
     def _double_clicked(self, index) -> None:
         item = self.model.items[index.row()]
         if index.column() == COL_OUTPUT:
             if item.dst is not None and item.dst.exists():
-                self._reveal(item.dst)
+                reveal_in_explorer(item.dst)
             return
         self._adjust_region(index.row())
 
@@ -329,12 +444,3 @@ class MainWindow(QMainWindow):
             if item.status in (FAILED, CANCELLED):
                 item.status = READY
             self.model.refresh_row(row)
-
-    @staticmethod
-    def _reveal(path: Path) -> None:
-        if sys.platform == "win32":
-            subprocess.Popen(["explorer", "/select,", str(path)])
-        elif sys.platform == "darwin":
-            subprocess.Popen(["open", "-R", str(path)])
-        else:
-            subprocess.Popen(["xdg-open", str(path.parent)])

@@ -65,6 +65,73 @@ def test_unsupported_and_duplicate_files_ignored(window, image_file, tmp_path):
     assert len(window.model.items) == 1
 
 
+def test_remove_selected_rows(window, qtbot, image_file, pdf_file):
+    window.add_files([image_file, pdf_file])
+    assert len(window.model.items) == 2
+    window.table.selectRow(0)
+    window._remove_selected()
+    assert len(window.model.items) == 1
+    assert window.model.items[0].path == pdf_file
+    window.table.selectRow(0)
+    window._remove_selected()
+    assert not window.model.items
+    assert window.stack.currentWidget() is window.drop_zone
+
+
+def test_settings_dialog_roundtrip(window, qtbot, tmp_path):
+    from nlmclean.gui.settings_dialog import SettingsDialog
+
+    dialog = SettingsDialog(window)
+    qtbot.addWidget(dialog)
+    dialog.mode_combo.setCurrentIndex(1)  # quality
+    dialog.strip_metadata_check.setChecked(True)
+    dialog.detect_combo.setCurrentIndex(1)  # universal
+    dialog.accept()
+
+    assert window.settings.value("mode") == "quality"
+    assert window.settings.value("strip_metadata", False, bool) is True
+    assert window.settings.value("detect_mode") == "universal"
+
+    reopened = SettingsDialog(window)
+    qtbot.addWidget(reopened)
+    assert reopened.mode_combo.currentData() == "quality"
+    assert reopened.strip_metadata_check.isChecked()
+    assert reopened.detect_combo.currentData() == "universal"
+
+
+def test_finished_file_lands_in_output_window(window, qtbot, image_file, tmp_path):
+    window.output_dir = tmp_path
+    window.add_files([image_file])
+    item = window.model.items[0]
+    qtbot.waitUntil(lambda: item.status == READY, timeout=15000)
+    window._start_all()
+    qtbot.waitUntil(lambda: item.status == DONE, timeout=30000)
+
+    win = window.output_win
+    assert win is not None
+    assert win.list.count() == 1
+    from PySide6.QtCore import Qt
+
+    assert win.list.item(0).data(Qt.UserRole) == str(item.dst)
+    # re-finishing the same path must not duplicate the entry
+    win.add_output(item.dst)
+    assert win.list.count() == 1
+    win.shutdown()
+
+
+def test_media_preview_renders_image(qtbot, image_file):
+    from nlmclean.gui.media_preview import MediaPreview
+
+    preview = MediaPreview()
+    qtbot.addWidget(preview)
+    preview.resize(400, 300)
+    preview.show_file(image_file)
+    assert preview._stack.currentIndex() == 1  # image page
+    assert preview._image_label.pixmap() is not None
+    preview.clear()
+    assert preview._stack.currentIndex() == 0  # placeholder
+
+
 def test_manual_region_scales_to_job_coords(window, qtbot, pdf_file):
     from nlmclean.core.region import Region
 

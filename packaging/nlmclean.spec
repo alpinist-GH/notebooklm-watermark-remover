@@ -19,6 +19,11 @@ a = Analysis(
     [str(ROOT / "packaging" / "launch_gui.py")],
     pathex=[str(ROOT / "src")],
     datas=datas,
+    hiddenimports=[
+        # output-window preview player
+        "PySide6.QtMultimedia",
+        "PySide6.QtMultimediaWidgets",
+    ],
     excludes=[
         "tkinter",
         "imageio_ffmpeg",  # releases use the bundled static ffmpeg
@@ -27,7 +32,6 @@ a = Analysis(
         "PySide6.QtQml",
         "PySide6.QtQuick",
         "PySide6.QtQuick3D",
-        "PySide6.QtMultimedia",
         "PySide6.QtCharts",
         "PySide6.QtDataVisualization",
         "PySide6.QtPdf",
@@ -38,12 +42,12 @@ a = Analysis(
 )
 
 # Qt DLLs pulled in via plugin deps that the app never loads (no QML/Quick UI,
-# no Qt PDF, no GL rendering, no networking).
+# no Qt PDF, no GL rendering). Qt6Network must stay: QtMultimedia links it.
+# plugins/tls stays pruned: the preview player only opens local files.
 _PRUNE = (
     "Qt6Quick",
     "Qt6Qml",
     "Qt6Pdf",
-    "Qt6Network",
     "Qt6ShaderTools",
     "Qt6VirtualKeyboard",
     "opengl32sw",
