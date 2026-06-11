@@ -8,7 +8,9 @@ Resolution order:
 
 from __future__ import annotations
 
+import os
 import shutil
+import stat
 import subprocess
 import sys
 from functools import lru_cache
@@ -27,8 +29,22 @@ def subprocess_flags() -> dict:
 def _bundled(name: str) -> str | None:
     if not getattr(sys, "frozen", False):
         return None
-    candidate = Path(sys.executable).parent / "_internal" / "ffmpeg" / f"{name}{_EXE}"
-    return str(candidate) if candidate.exists() else None
+    # PyInstaller sets sys._MEIPASS to the bundled-data root on every platform:
+    # <app>/_internal on Windows, nlmclean.app/Contents/Frameworks on macOS.
+    # (The old `Path(sys.executable).parent / "_internal"` only existed on Windows,
+    # so the bundled ffmpeg was invisible inside a macOS .app -> video failed.)
+    base = getattr(sys, "_MEIPASS", None) or (Path(sys.executable).parent / "_internal")
+    candidate = Path(base) / "ffmpeg" / f"{name}{_EXE}"
+    if not candidate.exists():
+        return None
+    # Data files can lose their executable bit when collected; restore it best-effort
+    # (no-op if already +x; ignored if the installed bundle is read-only).
+    if _EXE == "" and not os.access(candidate, os.X_OK):
+        try:
+            candidate.chmod(candidate.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+        except OSError:
+            pass
+    return str(candidate)
 
 
 @lru_cache(maxsize=1)
