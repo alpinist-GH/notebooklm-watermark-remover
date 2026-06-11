@@ -28,8 +28,25 @@ blurred or smudged.
 
 ## Install
 
-Prebuilt Windows and macOS bundles: see the GitHub Releases page (no Python or
-ffmpeg install required).
+Prebuilt builds are on the [GitHub Releases](https://github.com/alpinist-GH/notebooklm-watermark-remover/releases)
+page - no Python or ffmpeg to install, everything is bundled.
+
+**Windows**
+
+- *Installer (recommended):* download `nlmclean-<version>-windows-setup.exe`, run it,
+  and follow the prompts. It installs to Program Files, adds a Start Menu shortcut
+  (and an optional desktop icon), and registers an uninstaller in *Add or Remove
+  Programs*. SmartScreen may warn because the installer is unsigned - choose
+  *More info -> Run anyway*.
+- *Portable:* download `nlmclean-<version>-windows-x64.zip`, unzip anywhere, and
+  run `nlmclean.exe` - no installation.
+
+**macOS**
+
+- Download the dmg for your chip: `...-macos-arm64.dmg` (Apple Silicon) or
+  `...-macos-intel.dmg` (Intel). Open it and drag **nlmclean** to Applications.
+- The app is ad-hoc signed, so the first launch is blocked by Gatekeeper:
+  right-click the app -> **Open** -> **Open**.
 
 From source:
 
