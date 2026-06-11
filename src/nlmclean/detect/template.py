@@ -18,9 +18,8 @@ import cv2
 import numpy as np
 
 from nlmclean.core.region import Region
+from nlmclean.detect.profiles import WatermarkProfile
 
-ACCEPT_SCORE = 0.65
-PAD = 6
 # geometric scale sweep + exact 1.0: most exports match the template's native
 # 720p resolution, and a faint 12px mark loses correlation at even +/-8% scale
 _SCALES = np.unique(np.append(np.geomspace(0.4, 2.5, num=12), [1.0, 1.5, 2.0]))
@@ -32,9 +31,9 @@ def _assets_dir() -> Path:
     return Path(__file__).resolve().parents[3] / "assets" / "templates"
 
 
-@lru_cache(maxsize=4)
-def _load_template(kind: str) -> np.ndarray | None:
-    path = _assets_dir() / f"wm_{kind}.png"
+@lru_cache(maxsize=8)
+def _load_template(stem: str) -> np.ndarray | None:
+    path = _assets_dir() / f"wm_{stem}.png"
     if not path.exists():
         return None
     data = np.fromfile(str(path), dtype=np.uint8)
@@ -42,16 +41,18 @@ def _load_template(kind: str) -> np.ndarray | None:
     return tmpl
 
 
-def match_template(img_bgr: np.ndarray, kind: str) -> tuple[Region, float] | None:
-    tmpl = _load_template(kind)
+def match_template(img_bgr: np.ndarray, profile: WatermarkProfile) -> tuple[Region, float] | None:
+    tmpl = _load_template(profile.template)
     if tmpl is None:
         return None
 
     img_h, img_w = img_bgr.shape[:2]
-    # watermark lives bottom-right: search only that quadrant (faster, fewer false hits)
-    sx = int(img_w * 0.60)
-    sy = int(img_h * 0.70)
-    search = cv2.cvtColor(img_bgr[sy:, sx:], cv2.COLOR_BGR2GRAY)
+    # restrict the search to where this watermark family is known to live
+    # (faster, fewer false hits)
+    bx0, by0, bx1, by1 = profile.search_box
+    sx, sy = int(img_w * bx0), int(img_h * by0)
+    ex, ey = int(img_w * bx1), int(img_h * by1)
+    search = cv2.cvtColor(img_bgr[sy:ey, sx:ex], cv2.COLOR_BGR2GRAY)
 
     best: tuple[float, int, int, int, int] | None = None  # score, x, y, w, h
     for scale in _SCALES:
@@ -67,9 +68,9 @@ def match_template(img_bgr: np.ndarray, kind: str) -> tuple[Region, float] | Non
         if best is None or score > best[0]:
             best = (float(score), loc[0], loc[1], tw, th)
 
-    if best is None or best[0] < ACCEPT_SCORE:
+    if best is None or best[0] < profile.accept_score:
         return None
 
     score, x, y, w, h = best
-    region = Region(sx + x, sy + y, w, h).padded(PAD).clamped(img_w, img_h)
+    region = Region(sx + x, sy + y, w, h).padded(profile.pad).clamped(img_w, img_h)
     return region, min(1.0, score)

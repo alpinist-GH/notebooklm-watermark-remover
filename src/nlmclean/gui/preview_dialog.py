@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 from nlmclean.core.inpaint import inpaint_region
 from nlmclean.core.region import Region
 from nlmclean.detect import detect_region
-from nlmclean.detect.mask import stroke_mask_for_region
+from nlmclean.detect.mask import stroke_mask_for_kind, stroke_mask_for_region
 
 
 def bgr_to_pixmap(img: np.ndarray) -> QPixmap:
@@ -118,12 +118,23 @@ class RegionRectItem(QGraphicsRectItem):
 
 
 class PreviewDialog(QDialog):
-    def __init__(self, preview: np.ndarray, region: Region, kind: str, parent=None) -> None:
+    def __init__(
+        self,
+        preview: np.ndarray,
+        region: Region,
+        kind: str,
+        parent=None,
+        profile: str | None = None,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Adjust watermark region")
         self.resize(960, 640)
         self._preview = preview
-        self._kind = "video" if kind == "video" else "doc"
+        if kind in ("video", "image"):
+            self._kind = kind
+        else:
+            self._kind = "doc"
+        self._profile = profile
         self._showing_result = False
 
         self._scene = QGraphicsScene(self)
@@ -166,14 +177,17 @@ class PreviewDialog(QDialog):
         self._view.fitInView(self._pix_item, Qt.KeepAspectRatio)
 
     def _auto_detect(self) -> None:
-        region, _conf = detect_region(self._preview, self._kind)
+        region, _conf, self._profile = detect_region(self._preview, self._kind)
         self._rect_item.setPos(0, 0)
         self._rect_item.setRect(QRectF(*region.as_tuple()))
 
     def _toggle_result(self, checked: bool) -> None:
         if checked:
             region = self.selected_region()
-            mask = stroke_mask_for_region(self._preview, region, self._kind)
+            if self._profile is not None:
+                mask = stroke_mask_for_region(self._preview, region, self._profile)
+            else:
+                mask = stroke_mask_for_kind(self._preview, region, self._kind)
             cleaned = inpaint_region(self._preview, region, mask=mask)
             self._pix_item.setPixmap(bgr_to_pixmap(cleaned))
         else:
@@ -182,3 +196,6 @@ class PreviewDialog(QDialog):
     def selected_region(self) -> Region:
         h, w = self._preview.shape[:2]
         return self._rect_item.scene_region().clamped(w, h)
+
+    def selected_profile(self) -> str | None:
+        return self._profile

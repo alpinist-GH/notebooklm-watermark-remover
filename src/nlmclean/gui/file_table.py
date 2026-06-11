@@ -39,6 +39,7 @@ class FileItem:
     region: Region | None = None  # preview-image coordinates
     region_scale: float = 1.0
     region_is_manual: bool = False
+    profile: str | None = None  # matched watermark profile (None until detected)
     preview: np.ndarray | None = None
     planned_dst: Path | None = None  # where the output will be written
     dst: Path | None = None  # where it actually was written

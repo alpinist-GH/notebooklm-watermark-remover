@@ -74,7 +74,7 @@ def clean_pptx(job: Job, progress: ProgressCallback = null_progress) -> None:
                             key = (img.shape[1], img.shape[0])
                             region = job.region or region_cache.get(key)
                             if region is None:
-                                region, _conf = detect_region(img, "doc")
+                                region, _conf, _profile = detect_region(img, "doc")
                                 region_cache[key] = region
                             cleaned = inpaint_region(
                                 img, region, mask=stroke_mask_for_region(img, region, "doc")

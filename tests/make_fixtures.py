@@ -88,6 +88,32 @@ def make_image(path: Path, **kwargs) -> np.ndarray:
     return img
 
 
+def draw_gemini_image(w: int = 1365, h: int = 768) -> tuple[np.ndarray, tuple[int, int, int, int]]:
+    """Dark Gemini-style image with the real sparkle template composited at the
+    geometry measured on actual Gemini output (32px from the bottom-right
+    corner). Returns (BGR image, sparkle rect x,y,w,h)."""
+    from nlmclean.detect.template import _load_template
+
+    tmpl = _load_template("gemini")
+    assert tmpl is not None, "assets/templates/wm_gemini.png missing"
+    arr = np.full((h, w, 3), 18, np.uint8)
+    # some non-watermark content so the search window isn't featureless
+    arr[60:200, 80 : w - 80] = (60, 40, 35)
+    arr[260:600, 80 : w // 2] = (35, 30, 50)
+    th, tw = tmpl.shape
+    # template carries a 6px background margin around the 48px sparkle
+    x = w - 26 - tw
+    y = h - 26 - th
+    arr[y : y + th, x : x + tw] = tmpl[..., None]
+    return arr, (x + 6, y + 6, tw - 12, th - 12)
+
+
+def make_gemini_image(path: Path) -> np.ndarray:
+    img, _rect = draw_gemini_image()
+    path.write_bytes(imencode_bytes(img, path.suffix or ".png"))
+    return img
+
+
 def make_pdf(path: Path, n_pages: int = 2) -> None:
     pages = [
         Image.fromarray(draw_slide(kind="doc", title=f"Page {i + 1}")[:, :, ::-1])

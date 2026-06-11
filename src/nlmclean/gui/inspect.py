@@ -27,6 +27,7 @@ class Inspection:
     region: Region  # in preview-image coordinates
     confidence: float
     region_scale: float  # multiply preview coords by this to get Job.region coords
+    profile: str = "doc"  # watermark profile that matched (or the heuristic default)
 
 
 def inspect_file(path) -> Inspection:
@@ -42,23 +43,23 @@ def inspect_file(path) -> Inspection:
         info = probe(path)
         preview = imdecode_bytes(extract_frame(path, min(1.0, info.duration / 2)))
         region, conf = detect_video_region(path, info)
-        return Inspection("video", preview, region, conf, 1.0)
+        return Inspection("video", preview, region, conf, 1.0, "video")
 
     if kind == "pdf":
         from nlmclean.core.pdf import _DETECT_SCALE, _render_page_bgr
 
         preview = _render_page_bgr(path.read_bytes(), 0, _DETECT_SCALE)
-        region, conf = detect_region(preview, "doc")
-        return Inspection("pdf", preview, region, conf, 1.0 / _DETECT_SCALE)
+        region, conf, profile = detect_region(preview, "doc")
+        return Inspection("pdf", preview, region, conf, 1.0 / _DETECT_SCALE, profile)
 
     if kind == "pptx":
         preview = _first_slide_image(path)
-        region, conf = detect_region(preview, "doc")
-        return Inspection("pptx", preview, region, conf, 1.0)
+        region, conf, profile = detect_region(preview, "doc")
+        return Inspection("pptx", preview, region, conf, 1.0, profile)
 
     preview = imread(path)
-    region, conf = detect_region(preview, "doc")
-    return Inspection("image", preview, region, conf, 1.0)
+    region, conf, profile = detect_region(preview, "image")
+    return Inspection("image", preview, region, conf, 1.0, profile)
 
 
 def _first_slide_image(path) -> np.ndarray:

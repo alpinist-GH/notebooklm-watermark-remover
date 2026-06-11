@@ -263,6 +263,7 @@ class MainWindow(QMainWindow):
         item.region = inspection.region
         item.confidence = inspection.confidence
         item.region_scale = inspection.region_scale
+        item.profile = inspection.profile
         item.status = READY
         self.model.refresh_row(row)
 
@@ -386,6 +387,7 @@ class MainWindow(QMainWindow):
                 dst=item.planned_dst,
                 mode=mode,
                 region=item.job_region(),
+                profile=item.profile,
                 cancel=item.cancel,
             )
             self.model.refresh_row(row)
@@ -437,9 +439,10 @@ class MainWindow(QMainWindow):
         item = self.model.items[row]
         if item.preview is None or item.region is None:
             return
-        dialog = PreviewDialog(item.preview, item.region, item.kind, self)
+        dialog = PreviewDialog(item.preview, item.region, item.kind, self, profile=item.profile)
         if dialog.exec() == PreviewDialog.Accepted:
             item.region = dialog.selected_region()
+            item.profile = dialog.selected_profile()
             item.region_is_manual = True
             if item.status in (FAILED, CANCELLED):
                 item.status = READY

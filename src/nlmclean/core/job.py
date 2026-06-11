@@ -43,6 +43,7 @@ class Job:
     dst: Path
     mode: str = "fast"  # video only: "fast" (delogo) | "quality" (inpaint)
     region: Region | None = None  # explicit region skips auto-detection
+    profile: str | None = None  # watermark profile name when already detected
     cancel: CancelToken = field(default_factory=CancelToken)
 
 

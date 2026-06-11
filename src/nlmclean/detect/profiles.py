@@ -1,0 +1,52 @@
+"""Watermark profiles: which template to match where, per watermark family.
+
+A profile bundles a template image (assets/templates/wm_{template}.png) with
+its search area and acceptance threshold. File kinds map to an ordered list of
+candidate profiles; detection tries each and keeps the best-scoring hit, so an
+image can carry either the NotebookLM wordmark or the Gemini sparkle.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class WatermarkProfile:
+    name: str
+    template: str  # stem: assets/templates/wm_{template}.png
+    # search window as frame fractions (x0, y0, x1, y1)
+    search_box: tuple[float, float, float, float]
+    accept_score: float = 0.65
+    pad: int = 6
+    # solid marks (filled blobs like the Gemini sparkle) need threshold-based
+    # stroke extraction; thin wordmark strokes use morphology (see mask.py)
+    solid: bool = False
+
+
+PROFILES: dict[str, WatermarkProfile] = {
+    "video": WatermarkProfile("video", "video", (0.60, 0.70, 1.0, 1.0)),
+    "doc": WatermarkProfile("doc", "doc", (0.60, 0.70, 1.0, 1.0)),
+    # Gemini sparkle: ~48px four-pointed star, 32px from the bottom-right
+    # corner on 1365x768 samples. Searched across the whole bottom band since
+    # Gemini has placed it in either bottom corner across product versions;
+    # the higher-contrast mark tolerates a stricter threshold, which keeps
+    # false positives down in the wider window.
+    "gemini": WatermarkProfile(
+        "gemini", "gemini", (0.0, 0.70, 1.0, 1.0), accept_score=0.70, solid=True
+    ),
+}
+
+# detection order per file kind; first profiles are the most likely sources
+_KIND_PROFILES: dict[str, tuple[str, ...]] = {
+    "video": ("video",),
+    "doc": ("doc",),
+    "image": ("doc", "gemini"),
+}
+
+# profile whose geometry the heuristic fallback reports for each kind
+HEURISTIC_PROFILE = {"video": "video", "doc": "doc", "image": "doc"}
+
+
+def profiles_for(kind: str) -> list[WatermarkProfile]:
+    return [PROFILES[name] for name in _KIND_PROFILES[kind]]

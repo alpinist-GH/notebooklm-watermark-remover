@@ -18,6 +18,7 @@ import numpy as np
 from nlmclean.core.imgio import imdecode_bytes
 from nlmclean.core.region import Region
 from nlmclean.detect import template as _template
+from nlmclean.detect.profiles import PROFILES, profiles_for
 from nlmclean.ffmpeg.probe import VideoInfo
 from nlmclean.ffmpeg.runner import extract_frame
 
@@ -28,14 +29,23 @@ _REFINE_SAMPLES = 15
 _REFINE_DELTA = 4.0  # mean gray-level deviation that marks a pixel as stroke
 
 
-def _binarize_template(tmpl: np.ndarray) -> np.ndarray:
+def _binarize_template(tmpl: np.ndarray, solid: bool = False) -> np.ndarray:
     """255 where the template deviates from a local background estimate.
 
     The wordmark is thin strokes whose polarity depends on the export theme
     (dark on light slides, light on dark ones). Grayscale closing erases dark
     strokes, opening erases light ones; whichever direction deviates more is
     the stroke polarity - robust to gradients and to dense glyph spacing.
+
+    Solid marks (the Gemini sparkle: a filled ~48px blob) are wider than the
+    morphology kernel, which would only catch their edges - threshold against
+    the background level instead, with a low cutoff so the anti-aliased
+    feather around the blob is included.
     """
+    if solid:
+        bg = int(np.bincount(tmpl.ravel()).argmax())  # background = dominant level
+        dev = np.abs(tmpl.astype(np.int16) - bg)
+        return ((dev > _STROKE_DELTA) * 255).astype(np.uint8)
     kernel = np.ones((7, 7), np.uint8)
     t = tmpl.astype(np.int16)
     dark = cv2.morphologyEx(tmpl, cv2.MORPH_CLOSE, kernel).astype(np.int16) - t
@@ -70,10 +80,25 @@ def _align(crop_gray: np.ndarray, tmpl: np.ndarray) -> tuple[float, int, int, in
     return best
 
 
-def stroke_mask_for_region(img_bgr: np.ndarray, region: Region, kind: str) -> np.ndarray | None:
+def stroke_mask_for_kind(
+    img_bgr: np.ndarray, region: Region, kind: str
+) -> np.ndarray | None:
+    """Stroke mask for an unidentified watermark: try each profile registered
+    for *kind* and return the first one whose template aligns in the region."""
+    for profile in profiles_for(kind):
+        mask = stroke_mask_for_region(img_bgr, region, profile.name)
+        if mask is not None:
+            return mask
+    return None
+
+
+def stroke_mask_for_region(
+    img_bgr: np.ndarray, region: Region, profile_name: str
+) -> np.ndarray | None:
     """Region-sized uint8 mask (255 = watermark stroke), or None if the template
     is missing or cannot be confidently aligned inside the region."""
-    tmpl = _template._load_template(kind)
+    profile = PROFILES[profile_name]
+    tmpl = _template._load_template(profile.template)
     if tmpl is None:
         return None
     h, w = img_bgr.shape[:2]
@@ -85,13 +110,13 @@ def stroke_mask_for_region(img_bgr: np.ndarray, region: Region, kind: str) -> np
         return None
     _score, x, y, tw, th = hit
 
-    strokes = _binarize_template(tmpl)
+    strokes = _binarize_template(tmpl, solid=profile.solid)
     scaled = cv2.resize(strokes, (tw, th), interpolation=cv2.INTER_AREA)
     scaled = ((scaled > 64) * 255).astype(np.uint8)
     mask = np.zeros((r.h, r.w), np.uint8)
     mask[y : y + th, x : x + tw] = scaled
-    # 1px dilation covers the anti-aliased fringe of the strokes
-    return cv2.dilate(mask, _KERNEL3)
+    # dilation covers the anti-aliased fringe; solid marks have a wider feather
+    return cv2.dilate(mask, _KERNEL3, iterations=2 if profile.solid else 1)
 
 
 def refine_mask_temporal(

@@ -75,7 +75,7 @@ def _detect_geometry(
     if explicit is not None:
         return _PageGeometry(pw, ph, explicit)
     img = _render_page_bgr(pdf_bytes, 0, _DETECT_SCALE)
-    region_img, _conf = detect_region(img, "doc")
+    region_img, _conf, _profile = detect_region(img, "doc")
     return _PageGeometry(pw, ph, region_img.scaled(1.0 / _DETECT_SCALE))
 
 
@@ -224,7 +224,7 @@ def _try_image_patch(page: pikepdf.Page, geom: _PageGeometry) -> bool:
     img = cv2.cvtColor(np.asarray(pil), cv2.COLOR_RGB2BGR)
     # detection ran on the page render; rerunning on the actual embedded image is
     # more accurate when its resolution differs from the render
-    region_px, conf = detect_region(img, "doc")
+    region_px, conf, _profile = detect_region(img, "doc")
     if conf < 0.5:
         region_px = region.scaled(img.shape[1] / pw)
 

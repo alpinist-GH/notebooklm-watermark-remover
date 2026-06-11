@@ -45,7 +45,7 @@ def detect_video_region(src: Path, info: VideoInfo) -> tuple[Region, float]:
             frame = imdecode_bytes(extract_frame(src, t))
         except Exception:
             continue
-        region, conf = detect_region(frame, "video")
+        region, conf, _profile = detect_region(frame, "video")
         rects.append(region)
         confidences.append(conf)
     if not rects:
