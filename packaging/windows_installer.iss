@@ -4,10 +4,10 @@
 ;
 ; Build:
 ;   1. pyinstaller packaging/nlmclean.spec --noconfirm      (produces dist\nlmclean)
-;   2. ISCC packaging\windows_installer.iss                 (produces dist\nlmclean-v0.1.0-windows-setup.exe)
+;   2. ISCC packaging\windows_installer.iss                 (produces dist\nlmclean-v0.1.1-windows-setup.exe)
 
 #define MyAppName "nlmclean"
-#define MyAppVersion "0.1.0"
+#define MyAppVersion "0.1.1"
 #define MyAppPublisher "alpinist-GH"
 #define MyAppURL "https://github.com/alpinist-GH/notebooklm-watermark-remover"
 #define MyAppExeName "nlmclean.exe"
