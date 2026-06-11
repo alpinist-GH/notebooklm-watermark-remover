@@ -42,6 +42,7 @@ class Job:
     src: Path
     dst: Path
     mode: str = "fast"  # video only: "fast" (delogo) | "quality" (inpaint)
+    detect: str = "auto"  # video only: "auto" (templates) | "universal" (any static mark)
     region: Region | None = None  # explicit region skips auto-detection
     profile: str | None = None  # watermark profile name when already detected
     strip_metadata: bool = False  # also remove EXIF / PDF info / docProps / tags

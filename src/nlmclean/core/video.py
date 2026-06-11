@@ -62,13 +62,34 @@ def detect_video_region(src: Path, info: VideoInfo) -> tuple[Region, float]:
 def clean_video(job: Job, progress: ProgressCallback = null_progress) -> None:
     info = probe(job.src)
     region = job.region
-    if region is None:
+    mask: np.ndarray | None = None
+    if job.detect == "universal":
+        from nlmclean.detect.universal import detect_static_overlay
+
+        progress(0.0, "detecting watermark (universal)")
+        found, frame_mask, conf = detect_static_overlay(job.src, info)
+        if region is None:
+            if found is None or conf < 0.5:
+                raise ValueError(
+                    "no static watermark found - universal detection needs moving "
+                    "footage; draw the region manually instead"
+                )
+            region = found
+        # an explicit region (manual or pre-detected) wins; the temporal mask
+        # still gives stroke precision inside it when it was trustworthy
+        region = region.clamped(info.width, info.height, margin=1)
+        if frame_mask is not None and conf >= 0.5:
+            crop = frame_mask[region.y : region.y + region.h, region.x : region.x + region.w]
+            if crop.any():
+                mask = crop
+    elif region is None:
         progress(0.0, "detecting watermark")
         region, _conf = detect_video_region(job.src, info)
     # delogo (the fast-mode fallback) rejects rects touching the frame border
     region = region.clamped(info.width, info.height, margin=1)
 
-    mask = _stroke_mask(job.src, info, region)
+    if mask is None:
+        mask = _stroke_mask(job.src, info, region)
     if job.mode == "quality":
         _clean_quality(job, info, region, mask, progress)
     else:

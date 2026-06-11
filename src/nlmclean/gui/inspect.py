@@ -27,10 +27,12 @@ class Inspection:
     region: Region  # in preview-image coordinates
     confidence: float
     region_scale: float  # multiply preview coords by this to get Job.region coords
-    profile: str = "doc"  # watermark profile that matched (or the heuristic default)
+    # watermark profile that matched (or the heuristic default); None for
+    # universal video detection, which has no template
+    profile: str | None = "doc"
 
 
-def inspect_file(path) -> Inspection:
+def inspect_file(path, detect: str = "auto") -> Inspection:
     kind = kind_of(path)
     if kind is None:
         raise ValueError(f"unsupported file type: {path.suffix}")
@@ -42,6 +44,13 @@ def inspect_file(path) -> Inspection:
 
         info = probe(path)
         preview = imdecode_bytes(extract_frame(path, min(1.0, info.duration / 2)))
+        if detect == "universal":
+            from nlmclean.detect.universal import detect_static_overlay
+
+            region, _mask, conf = detect_static_overlay(path, info)
+            if region is not None:
+                # profile None: there is no template to build a stroke mask from
+                return Inspection("video", preview, region, conf, 1.0, None)
         region, conf = detect_video_region(path, info)
         return Inspection("video", preview, region, conf, 1.0, "video")
 

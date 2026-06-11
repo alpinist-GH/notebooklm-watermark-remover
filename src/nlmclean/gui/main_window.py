@@ -242,6 +242,7 @@ class MainWindow(QMainWindow):
             self.add_files([Path(n) for n in names])
 
     def add_files(self, paths: list[Path]) -> None:
+        detect = self.settings.value("detect_mode", "auto")
         for path in paths:
             kind = kind_of(path)
             if kind is None or not path.is_file() or self.model.has_path(path):
@@ -249,7 +250,7 @@ class MainWindow(QMainWindow):
             item = FileItem(path=path, kind=kind, status=DETECTING)
             item.planned_dst = default_output(path, self.output_dir)
             self.model.add(item)
-            self.pool.start(DetectWorker(item.item_id, path, self.signals))
+            self.pool.start(DetectWorker(item.item_id, path, self.signals, detect))
         if self.model.items:
             self.stack.setCurrentWidget(self.table)
 
@@ -374,6 +375,7 @@ class MainWindow(QMainWindow):
 
     def _start_all(self) -> None:
         mode = self.settings.value("mode", "fast")
+        detect = self.settings.value("detect_mode", "auto")
         strip_metadata = self.settings.value("strip_metadata", False, bool)
         for row, item in enumerate(self.model.items):
             if item.status not in (READY, FAILED, CANCELLED):
@@ -387,6 +389,7 @@ class MainWindow(QMainWindow):
                 src=item.path,
                 dst=item.planned_dst,
                 mode=mode,
+                detect=detect,
                 region=item.job_region(),
                 profile=item.profile,
                 strip_metadata=strip_metadata,

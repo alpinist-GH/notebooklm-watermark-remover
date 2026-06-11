@@ -24,15 +24,16 @@ class WorkerSignals(QObject):
 
 
 class DetectWorker(QRunnable):
-    def __init__(self, item_id: int, path, signals: WorkerSignals) -> None:
+    def __init__(self, item_id: int, path, signals: WorkerSignals, detect: str = "auto") -> None:
         super().__init__()
         self.item_id = item_id
         self.path = path
         self.signals = signals
+        self.detect = detect
 
     def run(self) -> None:
         try:
-            inspection = inspect_file(self.path)
+            inspection = inspect_file(self.path, self.detect)
         except Exception as exc:
             self.signals.detect_failed.emit(self.item_id, str(exc))
             return

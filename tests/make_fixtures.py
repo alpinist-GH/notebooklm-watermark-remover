@@ -148,6 +148,41 @@ def make_pptx(path: Path, n_slides: int = 3) -> None:
         z.writestr("ppt/media/image_logo.png", imencode_bytes(logo, ".png"))
 
 
+def make_universal_video(
+    path: Path, ffmpeg: str, w: int = 640, h: int = 360, fps: int = 10, seconds: float = 3.0
+) -> tuple[int, int, int, int]:
+    """Moving-gradient video with a static overlay at an arbitrary (non-NLM)
+    position - exercises temporal universal detection. Returns overlay rect."""
+    x, y, ow, oh = 90, 70, 150, 44  # top-left-ish: nowhere near template geometry
+    overlay = Image.new("L", (ow, oh), 0)
+    drawer = ImageDraw.Draw(overlay)
+    drawer.rectangle([2, 2, ow - 3, oh - 3], outline=255, width=3)
+    drawer.text((14, 14), "WATERMARK", fill=255)
+    overlay_mask = np.asarray(overlay) > 0
+
+    n_frames = round(seconds * fps)
+    ramp_x = np.linspace(0, 255, w, dtype=np.float32)[None, :]
+    ramp_y = np.linspace(0, 80, h, dtype=np.float32)[:, None]
+    cmd = [
+        ffmpeg, "-y", "-v", "error",
+        "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{w}x{h}", "-r", str(fps), "-i", "pipe:0",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p",
+        str(path),
+    ]  # fmt: skip
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+    assert proc.stdin is not None
+    for i in range(n_frames):
+        # the gradient scrolls so every pixel changes over time
+        frame_gray = np.clip((ramp_x + ramp_y + i * 12.0) % 256.0, 0, 255)
+        frame = np.repeat(frame_gray[:, :, None], 3, axis=2).astype(np.uint8)
+        frame[y : y + oh, x : x + ow][overlay_mask] = (250, 250, 250)
+        proc.stdin.write(frame.tobytes())
+    proc.stdin.close()
+    if proc.wait() != 0:
+        raise RuntimeError("fixture video encoding failed")
+    return x, y, ow, oh
+
+
 def make_video(path: Path, ffmpeg: str, seconds_per_slide: float = 1.0, fps: int = 10) -> None:
     """Two static slides with the video-geometry mark, plus a sine audio track."""
     w, h = REF_W, REF_H

@@ -36,6 +36,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="explicit watermark rectangle in pixels - skips auto-detection",
     )
     parser.add_argument(
+        "--detect",
+        choices=["auto", "universal"],
+        default="auto",
+        help="video watermark detection: auto = NotebookLM/Gemini templates, "
+        "universal = find any static watermark by comparing frames over time "
+        "(default: auto)",
+    )
+    parser.add_argument(
         "--strip-metadata",
         action="store_true",
         help="also remove metadata from outputs (EXIF, PDF info/XMP, PPTX "
@@ -67,6 +75,7 @@ def main(argv: list[str] | None = None) -> int:
             src=src,
             dst=dst,
             mode=args.mode,
+            detect=args.detect,
             region=args.region,
             strip_metadata=args.strip_metadata,
         )
