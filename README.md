@@ -18,10 +18,17 @@ blurred or smudged.
 - **Video** (the bit other tools don't do): two modes -
   *Fast* (ffmpeg `delogo`, near-instant) and *Quality* (per-frame OpenCV inpainting
   with a static-slide cache, audio preserved)
+- **Universal video mode**: removes *any* static burned-in watermark, not just
+  NotebookLM's - it finds the overlay by comparing frames over time (needs
+  moving footage; a manual region selector covers the rest)
 - **PDF**: removes the watermark object or inpaints it out of the page image
 - **PPTX**: cleans the slide images in place; nothing else in the deck is touched
-- **Images**: PNG / JPG / WEBP
-- Desktop GUI with drag-and-drop batch processing, plus a full CLI
+- **Images**: PNG / JPG / WEBP - including the **Gemini sparkle** watermark on
+  AI-generated photos and infographics
+- **Metadata stripping** (optional): EXIF, PDF info/XMP, PPTX document
+  properties, video container tags
+- Desktop GUI with drag-and-drop batch processing, an output window with a
+  built-in preview/player, plus a full CLI
 - Automatic watermark detection with manual region override
 
 ![nlmclean GUI processing a mixed batch](docs/screenshots/gui-main.png)
@@ -67,6 +74,8 @@ nlmclean video.mp4                       # fast mode, writes video_clean.mp4
 nlmclean video.mp4 --mode quality        # per-frame inpainting
 nlmclean deck.pdf slides.pptx img.png    # batch, any mix of formats
 nlmclean video.mp4 --region 1240,850,200,60   # explicit watermark rect
+nlmclean any_video.mp4 --detect universal     # remove any static watermark
+nlmclean photo.png --strip-metadata           # also drop EXIF/metadata
 ```
 
 ## License
