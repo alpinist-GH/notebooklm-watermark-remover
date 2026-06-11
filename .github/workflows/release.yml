@@ -15,8 +15,10 @@ jobs:
         include:
           - os: windows-latest
             artifact: nlmclean-${{ github.ref_name }}-windows-x64.zip
-          - os: macos-14
-            artifact: nlmclean-${{ github.ref_name }}-macos.dmg
+          - os: macos-14      # Apple Silicon (arm64)
+            artifact: nlmclean-${{ github.ref_name }}-macos-arm64.dmg
+          - os: macos-13      # Intel (x86_64)
+            artifact: nlmclean-${{ github.ref_name }}-macos-intel.dmg
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -24,6 +26,17 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+
+      # pikepdf has no prebuilt macOS-Intel wheel, so it compiles from source and
+      # needs the qpdf headers. Harmless on arm64 (uses a wheel). Persist the
+      # discovery paths so the pip step below can find qpdf.
+      - name: Install qpdf (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install qpdf
+          echo "CMAKE_PREFIX_PATH=$(brew --prefix qpdf)" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=$(brew --prefix qpdf)/lib/pkgconfig" >> "$GITHUB_ENV"
+
       - name: Install
         run: pip install -e .[dev]
 
@@ -40,9 +53,16 @@ jobs:
       - name: Build
         run: pyinstaller packaging/nlmclean.spec --noconfirm
 
-      - name: Package (Windows)
+      - name: Package (Windows zip)
         if: runner.os == 'Windows'
         run: Compress-Archive -Path dist/nlmclean -DestinationPath ${{ matrix.artifact }}
+
+      # Inno Setup (iscc) is preinstalled on the windows-latest runner image.
+      # Wraps the bundle into an installer; /F overrides the output basename so it
+      # carries the tag (OutputDir is dist\, set in the .iss).
+      - name: Package (Windows installer)
+        if: runner.os == 'Windows'
+        run: iscc packaging\windows_installer.iss /F"nlmclean-${{ github.ref_name }}-windows-setup"
 
       - name: Package (macOS)
         if: runner.os == 'macOS'
@@ -51,5 +71,9 @@ jobs:
       - name: Upload release artifact
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ matrix.artifact }}
+          # The installer pattern matches nothing on macOS runners; softprops
+          # does not fail on unmatched patterns by default.
+          files: |
+            ${{ matrix.artifact }}
+            dist/nlmclean-${{ github.ref_name }}-windows-setup.exe
           draft: true
