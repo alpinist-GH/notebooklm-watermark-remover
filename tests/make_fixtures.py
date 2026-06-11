@@ -28,6 +28,26 @@ def mark_rect(w: int, h: int, kind: str) -> tuple[int, int, int, int]:
     return w - round(right * s) - mw, h - round(bottom * s) - mh, mw, mh
 
 
+def _mark_layer(w: int, h: int, kind: str) -> np.ndarray:
+    """Frame-sized grayscale layer with the fake wordmark strokes (255 = stroke).
+
+    Like the real watermark, the mark is sparse text strokes rather than a solid
+    box, so stroke-precision can be asserted against this exact ground truth.
+    """
+    x, y, mw, mh = mark_rect(w, h, kind)
+    txt = Image.new("L", (120, 14), 0)
+    ImageDraw.Draw(txt).text((2, 1), "NotebookLM", fill=255)
+    txt = txt.resize((mw, mh), Image.NEAREST)
+    layer = np.zeros((h, w), np.uint8)
+    layer[y : y + mh, x : x + mw] = np.asarray(txt)
+    return layer
+
+
+def mark_stroke_mask(w: int, h: int, kind: str) -> np.ndarray:
+    """Frame-sized binary ground-truth mask of the fake watermark strokes."""
+    return ((_mark_layer(w, h, kind) > 0) * 255).astype(np.uint8)
+
+
 def draw_slide(
     w: int = REF_W,
     h: int = REF_H,
@@ -46,12 +66,20 @@ def draw_slide(
         drawer.text((80, 85), title, fill=(255, 255, 255))
         drawer.rectangle([60, 200, w // 2, h - 200], outline=(120, 120, 120), width=3)
 
-    if mark:
-        x, y, mw, mh = mark_rect(w, h, kind)
-        drawer.rounded_rectangle([x, y, x + mw, y + mh], radius=8, fill=(40, 40, 40))
-        drawer.text((x + 10, y + mh // 3), "NotebookLM", fill=(240, 240, 240))
+    arr = np.asarray(img).copy()
+    if w >= 600 and h >= 600:
+        # gentle gradient + ripple texture under the mark area: rectangle-wide
+        # cleanup smears it, stroke-precise cleanup leaves it bit-identical
+        band = arr[h - 120 : h].astype(np.float32)
+        band -= np.linspace(0.0, 25.0, w, dtype=np.float32)[None, :, None]
+        band -= np.linspace(0.0, 15.0, 120, dtype=np.float32)[:, None, None]
+        band += 6.0 * np.sin(np.arange(w, dtype=np.float32) / 5.0)[None, :, None]
+        arr[h - 120 : h] = np.clip(band, 0, 255).astype(np.uint8)
 
-    return np.asarray(img)[:, :, ::-1].copy()  # RGB -> BGR
+    if mark:
+        arr[_mark_layer(w, h, kind) > 0] = (40, 40, 40)
+
+    return arr[:, :, ::-1].copy()  # RGB -> BGR
 
 
 def make_image(path: Path, **kwargs) -> np.ndarray:

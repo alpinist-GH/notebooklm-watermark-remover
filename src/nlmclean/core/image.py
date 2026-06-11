@@ -6,6 +6,7 @@ from nlmclean.core.imgio import imread, imwrite
 from nlmclean.core.inpaint import inpaint_region
 from nlmclean.core.job import Job, ProgressCallback, null_progress
 from nlmclean.detect import detect_region
+from nlmclean.detect.mask import stroke_mask_for_region
 
 
 def clean_image(job: Job, progress: ProgressCallback = null_progress) -> None:
@@ -16,6 +17,6 @@ def clean_image(job: Job, progress: ProgressCallback = null_progress) -> None:
         region, _conf = detect_region(img, "doc")
     job.cancel.raise_if_cancelled()
     progress(0.5, "inpainting")
-    cleaned = inpaint_region(img, region)
+    cleaned = inpaint_region(img, region, mask=stroke_mask_for_region(img, region, "doc"))
     imwrite(job.dst, cleaned)
     progress(1.0, "done")

@@ -1,26 +1,32 @@
 """Video watermark removal.
 
 Two modes:
-- fast: single ffmpeg pass with the `delogo` filter (near-instant, slight blur patch)
-- quality: decode raw frames over a pipe, OpenCV-inpaint the watermark ROI, re-encode.
-  NotebookLM videos are mostly still slides, so inpainted patches are cached by ROI
-  hash - the typical hit rate is >95% and the bottleneck becomes x264 encoding.
+- fast: single ffmpeg pass - `removelogo` with a pixel-exact stroke mask when the
+  template aligns (only the ~750 wordmark pixels are touched), `delogo` rectangle
+  fallback otherwise
+- quality: decode raw frames over a pipe, OpenCV-inpaint the watermark strokes,
+  re-encode. NotebookLM videos are mostly still slides, so inpainted patches are
+  cached by ROI hash - the typical hit rate is >95% and the bottleneck becomes
+  x264 encoding.
 """
 
 from __future__ import annotations
 
 import hashlib
+import os
 import subprocess
+import tempfile
 from collections import OrderedDict
 from pathlib import Path
 
 import numpy as np
 
-from nlmclean.core.imgio import imdecode_bytes
+from nlmclean.core.imgio import imdecode_bytes, imwrite
 from nlmclean.core.inpaint import inpaint_roi
 from nlmclean.core.job import CancelledError, Job, ProgressCallback, null_progress
 from nlmclean.core.region import Region
 from nlmclean.detect import detect_region
+from nlmclean.detect.mask import refine_mask_temporal, stroke_mask_for_region
 from nlmclean.ffmpeg.locate import find_ffmpeg, subprocess_flags
 from nlmclean.ffmpeg.probe import VideoInfo, probe
 from nlmclean.ffmpeg.runner import extract_frame, run_ffmpeg
@@ -59,17 +65,52 @@ def clean_video(job: Job, progress: ProgressCallback = null_progress) -> None:
     if region is None:
         progress(0.0, "detecting watermark")
         region, _conf = detect_video_region(job.src, info)
-    # delogo rejects rects touching the frame border
+    # delogo (the fast-mode fallback) rejects rects touching the frame border
     region = region.clamped(info.width, info.height, margin=1)
 
+    mask = _stroke_mask(job.src, info, region)
     if job.mode == "quality":
-        _clean_quality(job, info, region, progress)
+        _clean_quality(job, info, region, mask, progress)
     else:
-        _clean_fast(job, info, region, progress)
+        _clean_fast(job, info, region, mask, progress)
 
 
-def _clean_fast(job: Job, info: VideoInfo, region: Region, progress: ProgressCallback) -> None:
-    vf = f"delogo=x={region.x}:y={region.y}:w={region.w}:h={region.h}"
+def _stroke_mask(src: Path, info: VideoInfo, region: Region) -> np.ndarray | None:
+    """Region-sized stroke mask, refined against the video, or None (rect fallback)."""
+    try:
+        frame = imdecode_bytes(extract_frame(src, info.duration * 0.5 if info.duration else 0.0))
+    except Exception:
+        return None
+    mask = stroke_mask_for_region(frame, region, "video")
+    if mask is None:
+        return None
+    return refine_mask_temporal(src, info, region, mask)
+
+
+def _filter_path(path: Path) -> str:
+    """Escape a filename for use inside an ffmpeg filter option value."""
+    return "'" + path.as_posix().replace(":", "\\:") + "'"
+
+
+def _clean_fast(
+    job: Job,
+    info: VideoInfo,
+    region: Region,
+    mask: np.ndarray | None,
+    progress: ProgressCallback,
+) -> None:
+    mask_file: Path | None = None
+    if mask is not None:
+        # removelogo interpolates only the white mask pixels - no rectangle blur
+        frame_mask = np.zeros((info.height, info.width), np.uint8)
+        frame_mask[region.y : region.y + region.h, region.x : region.x + region.w] = mask
+        fd, tmp_name = tempfile.mkstemp(prefix="nlmclean_mask_", suffix=".png")
+        os.close(fd)
+        mask_file = Path(tmp_name)
+        imwrite(mask_file, frame_mask)
+        vf = f"removelogo=f={_filter_path(mask_file)}"
+    else:
+        vf = f"delogo=x={region.x}:y={region.y}:w={region.w}:h={region.h}"
     if info.vfr:
         vf += ",fps=source_fps"  # normalize odd VFR exports
     args = [
@@ -80,14 +121,18 @@ def _clean_fast(job: Job, info: VideoInfo, region: Region, progress: ProgressCal
         "-c:a", "copy", "-movflags", "+faststart",
         str(job.dst),
     ]  # fmt: skip
-    run_ffmpeg(
-        args,
-        duration=info.duration,
-        output=job.dst,
-        progress=progress,
-        cancel=job.cancel,
-        stage="removing watermark (fast)",
-    )
+    try:
+        run_ffmpeg(
+            args,
+            duration=info.duration,
+            output=job.dst,
+            progress=progress,
+            cancel=job.cancel,
+            stage="removing watermark (fast)",
+        )
+    finally:
+        if mask_file is not None:
+            mask_file.unlink(missing_ok=True)
 
 
 def _read_exact(stream, n: int) -> bytes | None:
@@ -102,13 +147,25 @@ def _read_exact(stream, n: int) -> bytes | None:
     return b"".join(chunks)
 
 
-def _clean_quality(job: Job, info: VideoInfo, region: Region, progress: ProgressCallback) -> None:
+def _clean_quality(
+    job: Job,
+    info: VideoInfo,
+    region: Region,
+    mask: np.ndarray | None,
+    progress: ProgressCallback,
+) -> None:
     exe = find_ffmpeg()
     if not exe:
         raise RuntimeError("ffmpeg not found")
     w, h = info.width, info.height
     frame_bytes = w * h * 3
     roi = region.padded(ROI_HALO).clamped(w, h)
+
+    roi_mask: np.ndarray | None = None
+    if mask is not None:
+        roi_mask = np.zeros((roi.h, roi.w), np.uint8)
+        ox, oy = region.x - roi.x, region.y - roi.y
+        roi_mask[oy : oy + mask.shape[0], ox : ox + mask.shape[1]] = mask
 
     decode_cmd = [
         exe, "-v", "error", "-i", str(job.src),
@@ -155,7 +212,7 @@ def _clean_quality(job: Job, info: VideoInfo, region: Region, progress: Progress
             key = hashlib.blake2b(crop.tobytes(), digest_size=16).digest()
             patch = cache.get(key)
             if patch is None:
-                patch = inpaint_roi(crop)
+                patch = inpaint_roi(crop, mask=roi_mask)
                 cache[key] = patch
                 if len(cache) > _CACHE_MAX:
                     cache.popitem(last=False)

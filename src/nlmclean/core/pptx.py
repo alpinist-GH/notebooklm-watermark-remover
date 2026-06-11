@@ -16,6 +16,7 @@ from nlmclean.core.inpaint import inpaint_region
 from nlmclean.core.job import Job, ProgressCallback, null_progress
 from nlmclean.core.region import Region
 from nlmclean.detect import detect_region
+from nlmclean.detect.mask import stroke_mask_for_region
 
 _IMAGE_EXTS = {".png", ".jpg", ".jpeg"}
 _MIN_SLIDE_WIDTH = 800
@@ -75,7 +76,9 @@ def clean_pptx(job: Job, progress: ProgressCallback = null_progress) -> None:
                             if region is None:
                                 region, _conf = detect_region(img, "doc")
                                 region_cache[key] = region
-                            cleaned = inpaint_region(img, region)
+                            cleaned = inpaint_region(
+                                img, region, mask=stroke_mask_for_region(img, region, "doc")
+                            )
                             ext = PurePosixPath(entry.filename).suffix.lower()
                             data = imencode_bytes(cleaned, ext)
                             processed += 1

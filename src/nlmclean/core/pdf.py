@@ -31,6 +31,7 @@ from nlmclean.core.inpaint import inpaint_region, inpaint_roi
 from nlmclean.core.job import Job, ProgressCallback, null_progress
 from nlmclean.core.region import Region
 from nlmclean.detect import detect_region
+from nlmclean.detect.mask import stroke_mask_for_region
 
 _DETECT_SCALE = 2.0
 _PATCH_SCALE = 2.0
@@ -227,7 +228,7 @@ def _try_image_patch(page: pikepdf.Page, geom: _PageGeometry) -> bool:
     if conf < 0.5:
         region_px = region.scaled(img.shape[1] / pw)
 
-    cleaned = inpaint_region(img, region_px)
+    cleaned = inpaint_region(img, region_px, mask=stroke_mask_for_region(img, region_px, "doc"))
     rgb = cv2.cvtColor(cleaned, cv2.COLOR_BGR2RGB)
 
     original_filter = xobj.get(Name.Filter)
@@ -258,12 +259,10 @@ def _overlay_patch(
     region, _pw, ph = _region_for_page(geom, page)
     rendered = _render_page_bgr(pdf_bytes, page_index, _PATCH_SCALE)
     roi_rect = (
-        region.scaled(_PATCH_SCALE)
-        .padded(_ROI_HALO)
-        .clamped(rendered.shape[1], rendered.shape[0])
+        region.scaled(_PATCH_SCALE).padded(_ROI_HALO).clamped(rendered.shape[1], rendered.shape[0])
     )
     roi = rendered[roi_rect.y : roi_rect.y + roi_rect.h, roi_rect.x : roi_rect.x + roi_rect.w]
-    patch = inpaint_roi(roi)
+    patch = inpaint_roi(roi, mask=stroke_mask_for_region(rendered, roi_rect, "doc"))
 
     buf = io.BytesIO()
     Image.fromarray(cv2.cvtColor(patch, cv2.COLOR_BGR2RGB)).save(

@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 from nlmclean.core.inpaint import inpaint_region
 from nlmclean.core.region import Region
 from nlmclean.detect import detect_region
+from nlmclean.detect.mask import stroke_mask_for_region
 
 
 def bgr_to_pixmap(img: np.ndarray) -> QPixmap:
@@ -171,7 +172,9 @@ class PreviewDialog(QDialog):
 
     def _toggle_result(self, checked: bool) -> None:
         if checked:
-            cleaned = inpaint_region(self._preview, self.selected_region())
+            region = self.selected_region()
+            mask = stroke_mask_for_region(self._preview, region, self._kind)
+            cleaned = inpaint_region(self._preview, region, mask=mask)
             self._pix_item.setPixmap(bgr_to_pixmap(cleaned))
         else:
             self._pix_item.setPixmap(bgr_to_pixmap(self._preview))
