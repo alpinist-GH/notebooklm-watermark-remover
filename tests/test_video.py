@@ -42,6 +42,36 @@ def test_clean_video(video_file, tmp_path, mode):
         assert outside < 8.0, f"frame damaged outside watermark at t={t} (diff {outside:.1f})"
 
 
+def test_strip_video_metadata(video_file, tmp_path, ffmpeg_exe):
+    import json
+    import subprocess
+
+    from nlmclean.ffmpeg.locate import find_ffprobe, subprocess_flags
+
+    ffprobe = find_ffprobe()
+    if ffprobe is None:
+        pytest.skip("ffprobe not available")
+
+    def format_tags(path) -> dict:
+        out = subprocess.run(
+            [ffprobe, "-v", "error", "-show_entries", "format_tags", "-of", "json", str(path)],
+            capture_output=True, text=True, timeout=60, **subprocess_flags(),
+        ).stdout  # fmt: skip
+        return json.loads(out or "{}").get("format", {}).get("tags", {})
+
+    tagged = tmp_path / "tagged.mp4"
+    subprocess.run(
+        [ffmpeg_exe, "-y", "-v", "error", "-i", str(video_file),
+         "-c", "copy", "-metadata", "title=Secret Title", str(tagged)],
+        check=True, timeout=120, **subprocess_flags(),
+    )  # fmt: skip
+    assert format_tags(tagged).get("title") == "Secret Title"
+
+    dst = tmp_path / "tagged_clean.mp4"
+    clean_video(Job(src=tagged, dst=dst, mode="fast", strip_metadata=True))
+    assert "title" not in format_tags(dst)
+
+
 @pytest.mark.parametrize("mode", ["fast", "quality"])
 def test_clean_video_strokes_only(video_file, tmp_path, monkeypatch, mode):
     """With an aligned template the cleanup must touch only the watermark strokes."""

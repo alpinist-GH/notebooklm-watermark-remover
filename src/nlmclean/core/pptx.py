@@ -22,6 +22,26 @@ _IMAGE_EXTS = {".png", ".jpg", ".jpeg"}
 _MIN_SLIDE_WIDTH = 800
 _ASPECT_TOLERANCE = 0.05
 
+# minimal valid replacements when stripping metadata - parts are emptied, not
+# removed, so [Content_Types].xml and the package rels stay consistent
+_DOCPROPS_STUBS = {
+    "docProps/core.xml": (
+        b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        b'<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/'
+        b'package/2006/metadata/core-properties"/>'
+    ),
+    "docProps/app.xml": (
+        b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        b'<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/'
+        b'2006/extended-properties"/>'
+    ),
+    "docProps/custom.xml": (
+        b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        b'<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/'
+        b'2006/custom-properties"/>'
+    ),
+}
+
 
 def _slide_aspect(zin: zipfile.ZipFile) -> float | None:
     try:
@@ -62,6 +82,9 @@ def clean_pptx(job: Job, progress: ProgressCallback = null_progress) -> None:
             try:
                 for entry in entries:
                     job.cancel.raise_if_cancelled()
+                    if job.strip_metadata and entry.filename in _DOCPROPS_STUBS:
+                        zout.writestr(entry, _DOCPROPS_STUBS[entry.filename])
+                        continue
                     data = zin.read(entry.filename)
                     if entry in media:
                         try:

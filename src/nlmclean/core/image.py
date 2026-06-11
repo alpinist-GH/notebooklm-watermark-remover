@@ -28,5 +28,7 @@ def clean_image(job: Job, progress: ProgressCallback = null_progress) -> None:
     else:  # manual region without a known profile: first aligning template wins
         mask = stroke_mask_for_kind(img, region, "image")
     cleaned = inpaint_region(img, region, mask=mask)
+    # imgio re-encodes pixels only - EXIF/XMP never survives, so Job.strip_metadata
+    # is implicitly always honored for images (asserted by test_image.py)
     imwrite(job.dst, cleaned)
     progress(1.0, "done")

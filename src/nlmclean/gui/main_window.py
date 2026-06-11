@@ -374,6 +374,7 @@ class MainWindow(QMainWindow):
 
     def _start_all(self) -> None:
         mode = self.settings.value("mode", "fast")
+        strip_metadata = self.settings.value("strip_metadata", False, bool)
         for row, item in enumerate(self.model.items):
             if item.status not in (READY, FAILED, CANCELLED):
                 continue
@@ -388,6 +389,7 @@ class MainWindow(QMainWindow):
                 mode=mode,
                 region=item.job_region(),
                 profile=item.profile,
+                strip_metadata=strip_metadata,
                 cancel=item.cancel,
             )
             self.model.refresh_row(row)

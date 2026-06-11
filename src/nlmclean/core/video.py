@@ -119,8 +119,10 @@ def _clean_fast(
         "-map", "0:v:0", "-map", "0:a?",
         "-c:v", "libx264", "-crf", "18", "-preset", "medium", "-pix_fmt", "yuv420p",
         "-c:a", "copy", "-movflags", "+faststart",
-        str(job.dst),
     ]  # fmt: skip
+    if job.strip_metadata:
+        args += ["-map_metadata", "-1"]
+    args.append(str(job.dst))
     try:
         run_ffmpeg(
             args,
@@ -179,8 +181,10 @@ def _clean_quality(
         "-map", "0:v", "-map", "1:a?",
         "-c:v", "libx264", "-crf", "18", "-preset", "medium", "-pix_fmt", "yuv420p",
         "-c:a", "copy", "-movflags", "+faststart", "-shortest",
-        str(job.dst),
     ]  # fmt: skip
+    if job.strip_metadata:
+        encode_cmd += ["-map_metadata", "-1"]
+    encode_cmd.append(str(job.dst))
 
     decoder = subprocess.Popen(
         decode_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, **subprocess_flags()

@@ -22,3 +22,25 @@ def test_clean_pdf(pdf_file, tmp_path):
         assert before.shape == after.shape
         # rendering/JPEG round-trips are lossy; the structural check still holds
         assert_watermark_removed(before, after, "doc", max_outside=6.0)
+
+
+def test_strip_pdf_metadata(pdf_file, tmp_path):
+    # give the fixture real metadata first
+    tagged = tmp_path / "tagged.pdf"
+    with pikepdf.open(pdf_file) as pdf:
+        with pdf.open_metadata() as meta:
+            meta["dc:creator"] = ["Test Author"]
+        pdf.docinfo["/Title"] = "Secret Title"
+        pdf.save(tagged)
+
+    dst = tmp_path / "tagged_clean.pdf"
+    clean_pdf(Job(src=tagged, dst=dst, strip_metadata=True))
+    with pikepdf.open(dst) as cleaned:
+        assert "/Info" not in cleaned.trailer
+        assert "/Metadata" not in cleaned.Root
+
+    # default leaves metadata alone
+    dst_keep = tmp_path / "tagged_keep.pdf"
+    clean_pdf(Job(src=tagged, dst=dst_keep))
+    with pikepdf.open(dst_keep) as kept:
+        assert kept.docinfo.get("/Title") == "Secret Title"

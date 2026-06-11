@@ -290,6 +290,14 @@ def _overlay_patch(
 # ---------------------------------------------------------------- entry point
 
 
+def strip_pdf_metadata(pdf: pikepdf.Pdf) -> None:
+    """Drop the document info dictionary and the XMP metadata stream."""
+    if Name.Info in pdf.trailer:
+        del pdf.trailer[Name.Info]
+    if Name.Metadata in pdf.Root:
+        del pdf.Root[Name.Metadata]
+
+
 def clean_pdf(job: Job, progress: ProgressCallback = null_progress) -> None:
     pdf_bytes = Path(job.src).read_bytes()
     with pikepdf.open(io.BytesIO(pdf_bytes)) as pdf:
@@ -333,5 +341,7 @@ def clean_pdf(job: Job, progress: ProgressCallback = null_progress) -> None:
 
             progress((i + 1) / total, "cleaning pages")
 
+        if job.strip_metadata:
+            strip_pdf_metadata(pdf)
         pdf.save(str(job.dst))
     progress(1.0, "done")

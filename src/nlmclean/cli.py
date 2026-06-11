@@ -36,6 +36,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="explicit watermark rectangle in pixels - skips auto-detection",
     )
     parser.add_argument(
+        "--strip-metadata",
+        action="store_true",
+        help="also remove metadata from outputs (EXIF, PDF info/XMP, PPTX "
+        "document properties, video container tags)",
+    )
+    parser.add_argument(
         "-o",
         "--output-dir",
         type=Path,
@@ -57,7 +63,13 @@ def main(argv: list[str] | None = None) -> int:
     failures = 0
     for src in args.files:
         dst = default_output(src, args.output_dir, args.suffix)
-        job = Job(src=src, dst=dst, mode=args.mode, region=args.region)
+        job = Job(
+            src=src,
+            dst=dst,
+            mode=args.mode,
+            region=args.region,
+            strip_metadata=args.strip_metadata,
+        )
 
         last = {"pct": -1}
 
