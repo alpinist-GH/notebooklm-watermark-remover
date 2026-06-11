@@ -29,14 +29,19 @@ _REFINE_DELTA = 4.0  # mean gray-level deviation that marks a pixel as stroke
 
 
 def _binarize_template(tmpl: np.ndarray) -> np.ndarray:
-    """255 where the template is darker than a local background estimate.
+    """255 where the template deviates from a local background estimate.
 
-    The wordmark is thin dark strokes on a lighter background (that's how the
-    template asset is cropped), so grayscale closing erases the strokes and
-    leaves the background - robust to gradients and to dense glyph spacing.
+    The wordmark is thin strokes whose polarity depends on the export theme
+    (dark on light slides, light on dark ones). Grayscale closing erases dark
+    strokes, opening erases light ones; whichever direction deviates more is
+    the stroke polarity - robust to gradients and to dense glyph spacing.
     """
-    bg = cv2.morphologyEx(tmpl, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8))
-    return (((bg.astype(np.int16) - tmpl.astype(np.int16)) > _STROKE_DELTA) * 255).astype(np.uint8)
+    kernel = np.ones((7, 7), np.uint8)
+    t = tmpl.astype(np.int16)
+    dark = cv2.morphologyEx(tmpl, cv2.MORPH_CLOSE, kernel).astype(np.int16) - t
+    light = t - cv2.morphologyEx(tmpl, cv2.MORPH_OPEN, kernel).astype(np.int16)
+    dev = dark if dark.clip(min=0).sum() >= light.clip(min=0).sum() else light
+    return ((dev > _STROKE_DELTA) * 255).astype(np.uint8)
 
 
 def _align(crop_gray: np.ndarray, tmpl: np.ndarray) -> tuple[float, int, int, int, int] | None:
