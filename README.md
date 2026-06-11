@@ -7,6 +7,12 @@ and **PNG/JPG images** - fully locally, nothing is uploaded anywhere.
 > NotebookLM is a trademark of Google LLC. Only use this tool on content you have
 > the right to modify.
 
+![before / after on a real Video Overview export](docs/screenshots/before-after.png)
+
+Removal is stroke-precise: only the watermark's own pixels are touched
+(verified bit-identical elsewhere for PDF/PPTX), so nothing around it gets
+blurred or smudged.
+
 ## Features
 
 - **Video** (the bit other tools don't do): two modes -
@@ -17,6 +23,8 @@ and **PNG/JPG images** - fully locally, nothing is uploaded anywhere.
 - **Images**: PNG / JPG / WEBP
 - Desktop GUI with drag-and-drop batch processing, plus a full CLI
 - Automatic watermark detection with manual region override
+
+![nlmclean GUI processing a mixed batch](docs/screenshots/gui-main.png)
 
 ## Install
 
