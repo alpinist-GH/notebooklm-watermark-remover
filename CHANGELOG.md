@@ -6,11 +6,11 @@
 
 - Menu bar (File / Process / Settings / Help) with About and About Qt dialogs;
   every action now has an icon, a keyboard shortcut and a status-bar hint
-- New **Output window**: finished files appear in their own window with a
-  built-in preview - videos play with audio (QtMultimedia), images, PDF pages
-  and PPTX slides render inline; Open / Show in Folder / Clear List actions.
-  It opens docked side by side with the input window and follows it around;
-  drag it away to detach it
+- New **Output panel**: finished files appear in a panel below the input
+  list (separated by a draggable divider) with a built-in preview - videos
+  play with audio (QtMultimedia), images, PDF pages and PPTX slides render
+  inline; Open / Show in Folder / Clear List actions. It opens when the
+  first file finishes and can be shown/hidden from the toolbar
 - **Remove Selected** (toolbar, menu, right-click, Del key) and **Exit** actions
 - Settings dialog: video mode, output folder, metadata stripping, detection
   mode (replaces the old toolbar combos)

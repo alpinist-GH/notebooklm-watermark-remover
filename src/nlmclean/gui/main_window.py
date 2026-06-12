@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QMessageBox,
+    QSplitter,
     QStackedWidget,
     QStyle,
     QTableView,
@@ -35,6 +36,7 @@ from nlmclean.gui.file_table import (
     FileTableModel,
     ProgressDelegate,
 )
+from nlmclean.gui.output_panel import OutputPanel
 from nlmclean.gui.preview_dialog import PreviewDialog
 from nlmclean.gui.settings_dialog import SettingsDialog
 from nlmclean.gui.util import reveal_in_explorer
@@ -85,9 +87,8 @@ class MainWindow(QMainWindow):
         self.signals.finished.connect(self._on_finished)
         self.pool = QThreadPool.globalInstance()
         self.output_dir: Path | None = None
-        self.output_win = None  # created lazily on first finished file
         self._output_shown_once = False
-        self._docking = False  # re-entrancy guard: docking may move this window
+        self._panel_sized = False
 
         self._build_actions()
         self._build_menubar()
@@ -120,13 +121,14 @@ class MainWindow(QMainWindow):
         self.act_cancel.setStatusTip("Stop all files that are currently processing")
         self.act_cancel.triggered.connect(self._cancel_all)
 
-        self.act_output_window = QAction(
-            self._icon(QStyle.SP_FileDialogDetailedView), "Output Window", self
+        self.act_output_panel = QAction(
+            self._icon(QStyle.SP_FileDialogDetailedView), "Output Panel", self
         )
-        self.act_output_window.setStatusTip(
-            "Show finished files beside this window - click one to preview and play it"
+        self.act_output_panel.setCheckable(True)
+        self.act_output_panel.setStatusTip(
+            "Show or hide the finished-files panel - click a file there to preview it"
         )
-        self.act_output_window.triggered.connect(self._toggle_output_window)
+        self.act_output_panel.toggled.connect(self._set_output_visible)
 
         self.act_settings = QAction(
             self._icon(QStyle.SP_FileDialogContentsView), "Settings…", self
@@ -154,7 +156,7 @@ class MainWindow(QMainWindow):
         file_menu.addAction(self.act_add)
         file_menu.addAction(self.act_remove)
         file_menu.addSeparator()
-        file_menu.addAction(self.act_output_window)
+        file_menu.addAction(self.act_output_panel)
         file_menu.addSeparator()
         file_menu.addAction(self.act_exit)
 
@@ -181,7 +183,7 @@ class MainWindow(QMainWindow):
         bar.addAction(self.act_start)
         bar.addAction(self.act_cancel)
         bar.addSeparator()
-        bar.addAction(self.act_output_window)
+        bar.addAction(self.act_output_panel)
         bar.addAction(self.act_settings)
         bar.addSeparator()
         bar.addAction(self.act_exit)
@@ -206,7 +208,19 @@ class MainWindow(QMainWindow):
 
         self.stack.addWidget(self.drop_zone)
         self.stack.addWidget(self.table)
-        self.setCentralWidget(self.stack)
+
+        # output area lives below the input list, behind a splitter line;
+        # hidden until the first file finishes (or via the Output Panel action)
+        self.output_panel = OutputPanel()
+        self.output_panel.hide()
+
+        self.splitter = QSplitter(Qt.Vertical)
+        self.splitter.addWidget(self.stack)
+        self.splitter.addWidget(self.output_panel)
+        self.splitter.setStretchFactor(0, 1)
+        self.splitter.setStretchFactor(1, 1)
+        self.splitter.setCollapsible(0, False)
+        self.setCentralWidget(self.splitter)
 
     def _build_statusbar(self) -> None:
         version = ffmpeg_version()
@@ -220,8 +234,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event) -> None:
         self.settings.setValue("output_dir", str(self.output_dir) if self.output_dir else "")
         self._cancel_all()
-        if self.output_win is not None:
-            self.output_win.shutdown()
+        self.output_panel.shutdown()
         super().closeEvent(event)
 
     # ------------------------------------------------------------ add files
@@ -318,55 +331,22 @@ class MainWindow(QMainWindow):
                 message += f" ({failed} failed)"
             self.statusBar().showMessage(message)
 
-    # -------------------------------------------------------- output window
-    def _output_window(self):
-        if self.output_win is None:
-            from nlmclean.gui.output_window import OutputWindow
-
-            self.output_win = OutputWindow()
-        return self.output_win
-
+    # --------------------------------------------------------- output panel
     def _add_output(self, dst: Path) -> None:
-        win = self._output_window()
-        win.add_output(dst)
+        self.output_panel.add_output(dst)
         if not self._output_shown_once:
-            # only steal focus once per session, not on every batch item
+            # reveal the panel on the first finished file only - if the user
+            # hides it mid-batch, later items must not force it back open
             self._output_shown_once = True
-            self._show_output_beside(win)
+            self.act_output_panel.setChecked(True)
 
-    def _toggle_output_window(self) -> None:
-        win = self._output_window()
-        if win.isVisible():
-            win.hide()
-        else:
-            self._show_output_beside(win)
-
-    def _show_output_beside(self, win) -> None:
-        self._docking = True
-        try:
-            win.dock_beside(self)
-        finally:
-            self._docking = False
-        win.show()
-        win.raise_()
-
-    def _follow_with_output(self) -> None:
-        win = self.output_win
-        if win is None or not win.isVisible() or not win.docked or self._docking:
-            return
-        self._docking = True
-        try:
-            win.dock_beside(self)
-        finally:
-            self._docking = False
-
-    def moveEvent(self, event) -> None:
-        super().moveEvent(event)
-        self._follow_with_output()
-
-    def resizeEvent(self, event) -> None:
-        super().resizeEvent(event)
-        self._follow_with_output()
+    def _set_output_visible(self, visible: bool) -> None:
+        self.output_panel.setVisible(visible)
+        if visible and not self._panel_sized:
+            # first reveal: split the window evenly between input and output
+            self._panel_sized = True
+            height = max(self.splitter.height(), 2)
+            self.splitter.setSizes([height // 2, height - height // 2])
 
     # -------------------------------------------------------------- actions
     def _show_settings(self) -> None:

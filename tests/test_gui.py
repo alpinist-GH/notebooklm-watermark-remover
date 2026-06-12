@@ -99,7 +99,10 @@ def test_settings_dialog_roundtrip(window, qtbot, tmp_path):
     assert reopened.detect_combo.currentData() == "universal"
 
 
-def test_finished_file_lands_in_output_window(window, qtbot, image_file, tmp_path):
+def test_finished_file_lands_in_output_panel(window, qtbot, image_file, tmp_path):
+    panel = window.output_panel
+    assert not panel.isVisibleTo(window)  # hidden until something finishes
+
     window.output_dir = tmp_path
     window.add_files([image_file])
     item = window.model.items[0]
@@ -107,40 +110,25 @@ def test_finished_file_lands_in_output_window(window, qtbot, image_file, tmp_pat
     window._start_all()
     qtbot.waitUntil(lambda: item.status == DONE, timeout=30000)
 
-    win = window.output_win
-    assert win is not None
-    assert win.list.count() == 1
+    assert panel.isVisibleTo(window)  # revealed by the first finished file
+    assert window.act_output_panel.isChecked()
+    assert panel.list.count() == 1
     from PySide6.QtCore import Qt
 
-    assert win.list.item(0).data(Qt.UserRole) == str(item.dst)
+    assert panel.list.item(0).data(Qt.UserRole) == str(item.dst)
     # re-finishing the same path must not duplicate the entry
-    win.add_output(item.dst)
-    assert win.list.count() == 1
-    win.shutdown()
+    panel.add_output(item.dst)
+    assert panel.list.count() == 1
+    panel.shutdown()
 
 
-def test_output_window_docks_beside_input(window, qtbot):
-    window.show()
-    qtbot.waitExposed(window)
-    win = window._output_window()
-    window._show_output_beside(win)
-    assert win.docked
-    assert win.x() == window.frameGeometry().right() + 1
-    assert win.y() == window.frameGeometry().top()
-    assert win.height() == window.height()
-
-    # the output window follows when the input window moves
-    window.move(window.x() + 40, window.y() + 25)
-    assert win.x() == window.frameGeometry().right() + 1
-    assert win.y() == window.frameGeometry().top()
-
-    # dragging the output window away undocks it: it stops following
-    win.move(win.x() + 120, win.y())
-    assert not win.docked
-    parked = win.pos()
-    window.move(window.x() - 40, window.y())
-    assert win.pos() == parked
-    win.shutdown()
+def test_output_panel_action_toggles_visibility(window):
+    panel = window.output_panel
+    assert not panel.isVisibleTo(window)
+    window.act_output_panel.trigger()
+    assert panel.isVisibleTo(window)
+    window.act_output_panel.trigger()
+    assert not panel.isVisibleTo(window)
 
 
 def test_media_preview_renders_image(qtbot, image_file):

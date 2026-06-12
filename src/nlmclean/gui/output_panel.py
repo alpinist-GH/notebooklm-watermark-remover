@@ -1,4 +1,7 @@
-"""Output window: list of finished files with a built-in preview/player."""
+"""Output panel: finished files with a built-in preview/player.
+
+Embedded below the input list in the main window, separated by a splitter.
+"""
 
 from __future__ import annotations
 
@@ -8,29 +11,23 @@ from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QAction, QDesktopServices
 from PySide6.QtWidgets import (
     QFileIconProvider,
+    QLabel,
     QListWidget,
     QListWidgetItem,
-    QMainWindow,
     QSplitter,
     QStyle,
     QToolBar,
+    QVBoxLayout,
+    QWidget,
 )
 
 from nlmclean.gui.media_preview import MediaPreview
 from nlmclean.gui.util import reveal_in_explorer
 
 
-class OutputWindow(QMainWindow):
-    """Owned by MainWindow; closing it only hides it (the input window quits the app)."""
-
+class OutputPanel(QWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("nlmclean - Finished Files")
-        self.resize(900, 560)
-        self._really_close = False
-        self.docked = True  # follows the input window until the user drags it away
-        self._in_dock_move = False
-        self._dock_pos = self.pos()
         self._icons = QFileIconProvider()
 
         self.list = QListWidget()
@@ -44,18 +41,21 @@ class OutputWindow(QMainWindow):
         splitter.addWidget(self.list)
         splitter.addWidget(self.preview)
         splitter.setStretchFactor(1, 1)
-        self.setCentralWidget(splitter)
 
-        self._build_toolbar()
-        self.statusBar().showMessage(
-            "Click a file to preview it - double-click to open it in its default app"
-        )
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self._build_toolbar())
+        layout.addWidget(splitter, 1)
 
-    def _build_toolbar(self) -> None:
+    def _build_toolbar(self) -> QToolBar:
         bar = QToolBar()
         bar.setMovable(False)
         bar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        self.addToolBar(bar)
+
+        title = QLabel("<b>Finished files</b> &nbsp;-&nbsp; click one to preview it")
+        title.setContentsMargins(8, 0, 16, 0)
+        bar.addWidget(title)
 
         act_open = QAction(
             self.style().standardIcon(QStyle.SP_DialogOpenButton), "Open", self
@@ -78,42 +78,7 @@ class OutputWindow(QMainWindow):
         act_clear.setStatusTip("Empty this list (files on disk are not deleted)")
         act_clear.triggered.connect(self._clear_list)
         bar.addAction(act_clear)
-
-    # ------------------------------------------------------------- docking
-    def dock_beside(self, main: QMainWindow) -> None:
-        """Place this window flush against the input window's right edge."""
-        fg = main.frameGeometry()
-        x = fg.right() + 1
-        width = self.width()
-        screen = main.screen()
-        if screen is not None:
-            avail = screen.availableGeometry()
-            overflow = (x + self.frameGeometry().width()) - (avail.right() + 1)
-            if overflow > 0:
-                # make room: nudge the input window left, then shrink to fit
-                shift = min(overflow, max(0, fg.left() - avail.left()))
-                if shift > 0:
-                    main.move(main.x() - shift, main.y())
-                    fg = main.frameGeometry()
-                    x = fg.right() + 1
-                    overflow -= shift
-                if overflow > 0:
-                    width = max(480, width - overflow)
-        self._in_dock_move = True
-        try:
-            self.resize(width, main.height())
-            self.move(x, fg.top())
-        finally:
-            self._in_dock_move = False
-        self._dock_pos = self.pos()
-        self.docked = True
-
-    def moveEvent(self, event) -> None:
-        # a late window-system move to the docked spot (e.g. during show())
-        # is not a user drag - only moves away from it undock
-        if self.isVisible() and not self._in_dock_move and self.pos() != self._dock_pos:
-            self.docked = False  # the user dragged it away; stop following
-        super().moveEvent(event)
+        return bar
 
     # ----------------------------------------------------------------- API
     def add_output(self, path: Path) -> None:
@@ -129,9 +94,7 @@ class OutputWindow(QMainWindow):
         self.list.setCurrentItem(item)
 
     def shutdown(self) -> None:
-        self.preview.clear()
-        self._really_close = True
-        self.close()
+        self.preview.clear()  # release the player's file lock
 
     # ------------------------------------------------------------- internal
     def _selection_changed(self, current, _previous) -> None:
@@ -156,11 +119,3 @@ class OutputWindow(QMainWindow):
     def _clear_list(self) -> None:
         self.preview.clear()
         self.list.clear()
-
-    def closeEvent(self, event) -> None:
-        if self._really_close:
-            super().closeEvent(event)
-            return
-        self.preview.clear()
-        event.ignore()
-        self.hide()

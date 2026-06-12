@@ -27,7 +27,7 @@ blurred or smudged.
   AI-generated photos and infographics
 - **Metadata stripping** (optional): EXIF, PDF info/XMP, PPTX document
   properties, video container tags
-- Desktop GUI with drag-and-drop batch processing, an output window with a
+- Desktop GUI with drag-and-drop batch processing and an output panel with a
   built-in preview/player, plus a full CLI
 - Automatic watermark detection with manual region override
 
