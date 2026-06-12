@@ -28,6 +28,9 @@ class OutputWindow(QMainWindow):
         self.setWindowTitle("nlmclean - Finished Files")
         self.resize(900, 560)
         self._really_close = False
+        self.docked = True  # follows the input window until the user drags it away
+        self._in_dock_move = False
+        self._dock_pos = self.pos()
         self._icons = QFileIconProvider()
 
         self.list = QListWidget()
@@ -75,6 +78,42 @@ class OutputWindow(QMainWindow):
         act_clear.setStatusTip("Empty this list (files on disk are not deleted)")
         act_clear.triggered.connect(self._clear_list)
         bar.addAction(act_clear)
+
+    # ------------------------------------------------------------- docking
+    def dock_beside(self, main: QMainWindow) -> None:
+        """Place this window flush against the input window's right edge."""
+        fg = main.frameGeometry()
+        x = fg.right() + 1
+        width = self.width()
+        screen = main.screen()
+        if screen is not None:
+            avail = screen.availableGeometry()
+            overflow = (x + self.frameGeometry().width()) - (avail.right() + 1)
+            if overflow > 0:
+                # make room: nudge the input window left, then shrink to fit
+                shift = min(overflow, max(0, fg.left() - avail.left()))
+                if shift > 0:
+                    main.move(main.x() - shift, main.y())
+                    fg = main.frameGeometry()
+                    x = fg.right() + 1
+                    overflow -= shift
+                if overflow > 0:
+                    width = max(480, width - overflow)
+        self._in_dock_move = True
+        try:
+            self.resize(width, main.height())
+            self.move(x, fg.top())
+        finally:
+            self._in_dock_move = False
+        self._dock_pos = self.pos()
+        self.docked = True
+
+    def moveEvent(self, event) -> None:
+        # a late window-system move to the docked spot (e.g. during show())
+        # is not a user drag - only moves away from it undock
+        if self.isVisible() and not self._in_dock_move and self.pos() != self._dock_pos:
+            self.docked = False  # the user dragged it away; stop following
+        super().moveEvent(event)
 
     # ----------------------------------------------------------------- API
     def add_output(self, path: Path) -> None:

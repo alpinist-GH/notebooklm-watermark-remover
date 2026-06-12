@@ -87,6 +87,7 @@ class MainWindow(QMainWindow):
         self.output_dir: Path | None = None
         self.output_win = None  # created lazily on first finished file
         self._output_shown_once = False
+        self._docking = False  # re-entrancy guard: docking may move this window
 
         self._build_actions()
         self._build_menubar()
@@ -123,7 +124,7 @@ class MainWindow(QMainWindow):
             self._icon(QStyle.SP_FileDialogDetailedView), "Output Window", self
         )
         self.act_output_window.setStatusTip(
-            "Show finished files - click one to preview and play it"
+            "Show finished files beside this window - click one to preview and play it"
         )
         self.act_output_window.triggered.connect(self._toggle_output_window)
 
@@ -331,16 +332,41 @@ class MainWindow(QMainWindow):
         if not self._output_shown_once:
             # only steal focus once per session, not on every batch item
             self._output_shown_once = True
-            win.show()
-            win.raise_()
+            self._show_output_beside(win)
 
     def _toggle_output_window(self) -> None:
         win = self._output_window()
         if win.isVisible():
             win.hide()
         else:
-            win.show()
-            win.raise_()
+            self._show_output_beside(win)
+
+    def _show_output_beside(self, win) -> None:
+        self._docking = True
+        try:
+            win.dock_beside(self)
+        finally:
+            self._docking = False
+        win.show()
+        win.raise_()
+
+    def _follow_with_output(self) -> None:
+        win = self.output_win
+        if win is None or not win.isVisible() or not win.docked or self._docking:
+            return
+        self._docking = True
+        try:
+            win.dock_beside(self)
+        finally:
+            self._docking = False
+
+    def moveEvent(self, event) -> None:
+        super().moveEvent(event)
+        self._follow_with_output()
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._follow_with_output()
 
     # -------------------------------------------------------------- actions
     def _show_settings(self) -> None:

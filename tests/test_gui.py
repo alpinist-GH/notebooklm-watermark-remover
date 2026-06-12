@@ -119,6 +119,30 @@ def test_finished_file_lands_in_output_window(window, qtbot, image_file, tmp_pat
     win.shutdown()
 
 
+def test_output_window_docks_beside_input(window, qtbot):
+    window.show()
+    qtbot.waitExposed(window)
+    win = window._output_window()
+    window._show_output_beside(win)
+    assert win.docked
+    assert win.x() == window.frameGeometry().right() + 1
+    assert win.y() == window.frameGeometry().top()
+    assert win.height() == window.height()
+
+    # the output window follows when the input window moves
+    window.move(window.x() + 40, window.y() + 25)
+    assert win.x() == window.frameGeometry().right() + 1
+    assert win.y() == window.frameGeometry().top()
+
+    # dragging the output window away undocks it: it stops following
+    win.move(win.x() + 120, win.y())
+    assert not win.docked
+    parked = win.pos()
+    window.move(window.x() - 40, window.y())
+    assert win.pos() == parked
+    win.shutdown()
+
+
 def test_media_preview_renders_image(qtbot, image_file):
     from nlmclean.gui.media_preview import MediaPreview
 
