@@ -21,6 +21,7 @@ packaging/ffmpeg_bin/
 .DS_Store
 Thumbs.db
 
-# Local test media (real NotebookLM exports - do not commit)
+# Local test media (real NotebookLM / Gemini exports - do not commit)
 samples/
 tests/fixtures_real/
+gemini_generated_video_*.MP4
