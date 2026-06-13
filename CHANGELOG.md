@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Gemini sparkle in videos**: the sparkle watermark on Gemini/Veo-generated
+  videos is now detected and removed. Video detection previously only tried the
+  NotebookLM wordmark, so the sparkle was left untouched; it now tries both
+  profiles and builds the matching (solid) stroke mask.
+
 ## 0.2.0 (2026-06-11)
 
 ### GUI overhaul

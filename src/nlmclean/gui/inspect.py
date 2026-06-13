@@ -51,8 +51,8 @@ def inspect_file(path, detect: str = "auto") -> Inspection:
             if region is not None:
                 # profile None: there is no template to build a stroke mask from
                 return Inspection("video", preview, region, conf, 1.0, None)
-        region, conf = detect_video_region(path, info)
-        return Inspection("video", preview, region, conf, 1.0, "video")
+        region, conf, profile = detect_video_region(path, info)
+        return Inspection("video", preview, region, conf, 1.0, profile)
 
     if kind == "pdf":
         from nlmclean.core.pdf import _DETECT_SCALE, _render_page_bgr

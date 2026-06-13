@@ -26,7 +26,11 @@ from nlmclean.core.inpaint import inpaint_roi
 from nlmclean.core.job import CancelledError, Job, ProgressCallback, null_progress
 from nlmclean.core.region import Region
 from nlmclean.detect import detect_region
-from nlmclean.detect.mask import refine_mask_temporal, stroke_mask_for_region
+from nlmclean.detect.mask import (
+    refine_mask_temporal,
+    stroke_mask_for_kind,
+    stroke_mask_for_region,
+)
 from nlmclean.ffmpeg.locate import find_ffmpeg, subprocess_flags
 from nlmclean.ffmpeg.probe import VideoInfo, probe
 from nlmclean.ffmpeg.runner import extract_frame, run_ffmpeg
@@ -35,19 +39,25 @@ ROI_HALO = 6
 _CACHE_MAX = 64
 
 
-def detect_video_region(src: Path, info: VideoInfo) -> tuple[Region, float]:
-    """Sample 5 frames evenly, detect on each, take the median rect."""
+def detect_video_region(src: Path, info: VideoInfo) -> tuple[Region, float, str]:
+    """Sample 5 frames evenly, detect on each, take the median rect.
+
+    Also reports the watermark profile (e.g. "video" or "gemini") chosen by the
+    most frames, so the caller can build the matching stroke mask.
+    """
     times = [info.duration * t for t in (0.1, 0.3, 0.5, 0.7, 0.9)] if info.duration else [0.0]
     rects: list[Region] = []
     confidences: list[float] = []
+    profiles: list[str] = []
     for t in times:
         try:
             frame = imdecode_bytes(extract_frame(src, t))
         except Exception:
             continue
-        region, conf, _profile = detect_region(frame, "video")
+        region, conf, profile = detect_region(frame, "video")
         rects.append(region)
         confidences.append(conf)
+        profiles.append(profile)
     if not rects:
         raise ValueError(f"could not decode any frame from {src}")
     med = Region(
@@ -56,13 +66,15 @@ def detect_video_region(src: Path, info: VideoInfo) -> tuple[Region, float]:
         w=int(np.median([r.w for r in rects])),
         h=int(np.median([r.h for r in rects])),
     )
-    return med.clamped(info.width, info.height), float(np.median(confidences))
+    profile = max(set(profiles), key=profiles.count)
+    return med.clamped(info.width, info.height), float(np.median(confidences)), profile
 
 
 def clean_video(job: Job, progress: ProgressCallback = null_progress) -> None:
     info = probe(job.src)
     region = job.region
     mask: np.ndarray | None = None
+    profile: str | None = None
     if job.detect == "universal":
         from nlmclean.detect.universal import detect_static_overlay
 
@@ -84,25 +96,34 @@ def clean_video(job: Job, progress: ProgressCallback = null_progress) -> None:
                 mask = crop
     elif region is None:
         progress(0.0, "detecting watermark")
-        region, _conf = detect_video_region(job.src, info)
+        region, _conf, profile = detect_video_region(job.src, info)
     # delogo (the fast-mode fallback) rejects rects touching the frame border
     region = region.clamped(info.width, info.height, margin=1)
 
     if mask is None:
-        mask = _stroke_mask(job.src, info, region)
+        mask = _stroke_mask(job.src, info, region, profile)
     if job.mode == "quality":
         _clean_quality(job, info, region, mask, progress)
     else:
         _clean_fast(job, info, region, mask, progress)
 
 
-def _stroke_mask(src: Path, info: VideoInfo, region: Region) -> np.ndarray | None:
-    """Region-sized stroke mask, refined against the video, or None (rect fallback)."""
+def _stroke_mask(
+    src: Path, info: VideoInfo, region: Region, profile: str | None = None
+) -> np.ndarray | None:
+    """Region-sized stroke mask, refined against the video, or None (rect fallback).
+
+    When the detector identified the watermark profile (e.g. the Gemini sparkle),
+    use it directly; otherwise (manual region) try every video profile.
+    """
     try:
         frame = imdecode_bytes(extract_frame(src, info.duration * 0.5 if info.duration else 0.0))
     except Exception:
         return None
-    mask = stroke_mask_for_region(frame, region, "video")
+    if profile is not None:
+        mask = stroke_mask_for_region(frame, region, profile)
+    else:
+        mask = stroke_mask_for_kind(frame, region, "video")
     if mask is None:
         return None
     return refine_mask_temporal(src, info, region, mask)

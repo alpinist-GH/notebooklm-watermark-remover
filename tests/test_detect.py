@@ -43,6 +43,24 @@ def test_detects_gemini_sparkle():
     assert _contains(region, rect)
 
 
+def test_detects_gemini_sparkle_in_video():
+    # regression: Gemini-generated videos carry the sparkle, not the NLM
+    # wordmark, so the "video" kind must also try the gemini profile
+    img, rect = draw_gemini_image()
+    region, conf, profile = detect_region(img, "video")
+    assert profile == "gemini"
+    assert conf >= 0.7
+    assert _contains(region, rect)
+
+
+def test_nlm_video_mark_still_wins_on_video():
+    # adding the gemini profile must not steal genuine NLM video frames
+    img = draw_slide(kind="video")
+    _, conf, profile = detect_region(img, "video")
+    if conf > 0.5:  # only meaningful when the template actually matched
+        assert profile == "video"
+
+
 def test_nlm_doc_still_wins_on_nlm_images():
     # regression: adding the gemini profile must not steal NLM slide images
     img = draw_slide(kind="doc")

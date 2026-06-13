@@ -17,7 +17,8 @@ blurred or smudged.
 
 - **Video** (the bit other tools don't do): two modes -
   *Fast* (ffmpeg `delogo`, near-instant) and *Quality* (per-frame OpenCV inpainting
-  with a static-slide cache, audio preserved)
+  with a static-slide cache, audio preserved). Detects both the NotebookLM
+  wordmark and the **Gemini sparkle** on Gemini/Veo-generated clips
 - **Universal video mode**: removes *any* static burned-in watermark, not just
   NotebookLM's - it finds the overlay by comparing frames over time (needs
   moving footage; a manual region selector covers the rest)
