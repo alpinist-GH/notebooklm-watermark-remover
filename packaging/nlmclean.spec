@@ -79,6 +79,6 @@ if sys.platform == "darwin":
         bundle_identifier="org.nlmclean.app",
         info_plist={
             "NSHighResolutionCapable": True,
-            "CFBundleShortVersionString": "0.2.0",
+            "CFBundleShortVersionString": "0.2.1",
         },
     )
