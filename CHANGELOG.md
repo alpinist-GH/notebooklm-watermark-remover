@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Universal detection on macOS (and any build with keyframe-only seek)**:
+  frame sampling used a fast `-ss` keyframe seek that, on sparse-keyframe
+  slideshow exports, returned the *same* frame for every timestamp on some
+  ffmpeg builds (notably the macOS evermeet static build). Universal detection
+  saw no motion and bailed ("video too still") while template detection still
+  worked off a single frame. Detection samplers now use an accurate two-stage
+  seek, so frames spread across the video are genuinely distinct on every build.
+
 ## 0.2.1 (2026-06-13)
 
 ### Fixed

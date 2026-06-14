@@ -59,13 +59,39 @@ def run_ffmpeg(
             proc.wait()
 
 
-def extract_frame(src: Path, at_seconds: float) -> bytes:
-    """Decode a single frame as PNG bytes (used by detection sampling and GUI preview)."""
+# accurate-seek coarse window: jump (via fast keyframe seek) to this many
+# seconds before the target, then decode the remainder accurately
+_ACCURATE_SEEK_WINDOW = 5.0
+
+
+def extract_frame(src: Path, at_seconds: float, *, accurate: bool = False) -> bytes:
+    """Decode a single frame as PNG bytes (used by detection sampling and GUI preview).
+
+    With ``accurate=False`` (default) a plain ``-ss`` before ``-i`` does a fast
+    keyframe seek - fine for one-off previews where the exact frame doesn't
+    matter. But plain input seeking lands on the nearest *preceding keyframe*,
+    and on sparse-keyframe slideshow exports some ffmpeg builds (notably the
+    macOS evermeet static build) return the *same* keyframe for many different
+    timestamps. That collapses the temporal signal that universal detection and
+    temporal mask refinement rely on - they see "no motion" and bail.
+
+    ``accurate=True`` uses a two-stage seek: a fast keyframe jump to a few
+    seconds before the target (``-ss`` before ``-i``), then an accurate decode
+    of the small remainder (``-ss`` after ``-i``). This returns the frame at the
+    requested time on every ffmpeg build, without decoding from the start, so
+    samples spread across the video are genuinely distinct.
+    """
     exe = find_ffmpeg()
     if not exe:
         raise RuntimeError("ffmpeg not found")
+    t = max(0.0, at_seconds)
+    if accurate:
+        coarse = max(0.0, t - _ACCURATE_SEEK_WINDOW)
+        seek = ["-ss", f"{coarse:.3f}", "-i", str(src), "-ss", f"{t - coarse:.3f}"]
+    else:
+        seek = ["-ss", f"{t:.3f}", "-i", str(src)]
     cmd = [
-        exe, "-ss", f"{max(0.0, at_seconds):.3f}", "-i", str(src),
+        exe, *seek,
         "-frames:v", "1", "-f", "image2pipe", "-vcodec", "png", "pipe:1",
     ]  # fmt: skip
     proc = subprocess.run(cmd, capture_output=True, timeout=120, **subprocess_flags())

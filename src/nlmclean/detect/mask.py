@@ -135,7 +135,7 @@ def refine_mask_temporal(
     n = 0
     for t in times:
         try:
-            frame = imdecode_bytes(extract_frame(src, t))
+            frame = imdecode_bytes(extract_frame(src, t, accurate=True))
         except Exception:
             continue
         crop = frame[region.y : region.y + region.h, region.x : region.x + region.w]

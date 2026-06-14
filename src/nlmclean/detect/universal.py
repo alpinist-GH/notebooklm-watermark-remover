@@ -45,7 +45,7 @@ def _sample_gray_frames(src: Path, info: VideoInfo) -> list[np.ndarray]:
     frames = []
     for t in times:
         try:
-            frame = imdecode_bytes(extract_frame(src, t))
+            frame = imdecode_bytes(extract_frame(src, t, accurate=True))
         except Exception:
             continue
         frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))

@@ -51,7 +51,7 @@ def detect_video_region(src: Path, info: VideoInfo) -> tuple[Region, float, str]
     profiles: list[str] = []
     for t in times:
         try:
-            frame = imdecode_bytes(extract_frame(src, t))
+            frame = imdecode_bytes(extract_frame(src, t, accurate=True))
         except Exception:
             continue
         region, conf, profile = detect_region(frame, "video")
