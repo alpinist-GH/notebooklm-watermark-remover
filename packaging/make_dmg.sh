@@ -12,6 +12,14 @@ OUT="${1:?usage: make_dmg.sh OUTPUT.dmg}"
 # Search by name to stay agnostic to the .app's internal layout.
 find "$APP" -name ffmpeg -type f -exec chmod +x {} +
 
+# Strip extended attributes (resource forks, com.apple.FinderInfo, quarantine)
+# before signing. Source trees staged from Windows/iCloud or a macOS-formatted
+# external drive carry this metadata, and codesign rejects it with
+# "resource fork, Finder information, or similar detritus not allowed".
+# Also delete AppleDouble (._*) sidecars that such drives scatter into the tree.
+find "$APP" -name '._*' -delete
+xattr -cr "$APP"
+
 codesign --force --deep -s - "$APP"
 codesign -dv "$APP"
 hdiutil create -volname "nlmclean" -srcfolder "$APP" -ov -format UDZO "$OUT"
