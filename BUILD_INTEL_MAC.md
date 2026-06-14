@@ -31,10 +31,10 @@ python packaging/fetch_ffmpeg.py  # downloads the x86_64 static ffmpeg
 
 pyinstaller packaging/nlmclean.spec --noconfirm
 
-bash packaging/make_dmg.sh nlmclean-v0.2.1-macos-intel.dmg
+bash packaging/make_dmg.sh nlmclean-v0.2.2-macos-intel.dmg
 ```
 
-The result is `nlmclean-v0.2.1-macos-intel.dmg` in the current directory, and the
+The result is `nlmclean-v0.2.2-macos-intel.dmg` in the current directory, and the
 raw app at `dist/nlmclean.app`.
 
 ## First launch
